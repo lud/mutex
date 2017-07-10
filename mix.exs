@@ -38,6 +38,7 @@ defmodule Mutex.Mixfile do
     [
       licenses: ["MIT"],
       maintainers: ["niahoo osef <dev@ooha.in>"],
+      links: [],
     ]
   end
 end
