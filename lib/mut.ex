@@ -2,14 +2,27 @@ defmodule Mutex do
   require Logger
   use GenServer
 
+  @typedoc "The name of a mutex is an atom, registered with `Process.register/2`"
   @type name :: atom
+
+  @typedoc "A key can be any term."
   @type key :: any
-  @type lock :: Lock.t
 
   defmodule Lock do
-    @moduledoc false
-    defstruct [:keys]
-    @type t :: %__MODULE__{}
+    @moduledoc """
+    This module defines a struct containing the key(s) locked with all the
+    locking functions in `Mutex`.
+    """
+    defstruct [:type, :key, :keys]
+    @typedoc """
+    The struct containing the key(s) locked during a lock operation. `:type`
+    specifies wether there is one or more keys.
+    """
+    @type t :: %__MODULE__{
+      type: :single | :multi,
+      key: nil | Mutex.key,
+      keys: nil | [Mutex.key]
+    }
   end
 
   @moduledoc """
@@ -50,31 +63,37 @@ defmodule Mutex do
 
   @doc """
   Attemps to lock a resource on the mutex and returns immediately with the
-  result.
+  result, which is either a `Mutex.Lock` structure or `{:error, :busy}`.
   """
-  @spec lock(name :: name, key :: key) :: :ok | {:error, :busy}
+  @spec lock(name :: name, key :: key) :: {:ok, Lock.t} | {:error, :busy}
   def lock(mutex, key) do
-    GenServer.call(mutex, {:lock, key, self(), false})
+    case GenServer.call(mutex, {:lock, key, self(), false}) do
+      :ok -> {:ok, key2lock(key)}
+      err -> err
+    end
   end
 
+  defp key2lock(key),
+    do: %Lock{type: :single, key: key}
 
   @doc """
-  Attemps to lock a resource on the mutex and returns immediately with ':ok' or
-  raises an exception if the key is already locked.
+  Attemps to lock a resource on the mutex and returns immediately with the lock
+  or raises an exception if the key is already locked.
   """
-  @spec lock!(name :: name, key :: key) :: :ok
+  @spec lock!(name :: name, key :: key) :: Lock.t
   def lock!(mutex, key) do
     case lock(mutex, key) do
-      :ok -> :ok
+      {:ok, lock} -> lock
       err -> raise "Locking of key #{inspect key} is impossible, "
               <> "the key is already locked (#{inspect err})."
     end
   end
 
   @doc """
-
   Locks a key if it is available, or waits for the key to be freed before
   attempting again to lock it.
+
+  Returns the lock or fails with a timeout.
 
   Due to the notification system, multiple attempts can be made to lock if
   multiple processes are competing for the key.
@@ -84,9 +103,10 @@ defmodule Mutex do
 
   Default timeout is `5000` milliseconds. If the timeout is reached, the caller
   process exists as in `GenServer.call/3`.
-  More information in the [timeouts](https://hexdocs.pm/elixir/GenServer.html#call/3-timeouts) section.
+  More information in the [timeouts](https://hexdocs.pm/elixir/GenServer.html#call/3-timeouts)
+  section.
   """
-  @spec await(mutex :: name, key :: key, timeout :: timeout) :: :ok
+  @spec await(mutex :: name, key :: key, timeout :: timeout) :: {:ok, Lock.t}
   def await(mutex, key, timeout \\ 5000)
 
   def await(mutex, key, timeout) when is_integer(timeout) and timeout < 0 do
@@ -95,7 +115,7 @@ defmodule Mutex do
 
   def await(mutex, key, :infinity) do
     case GenServer.call(mutex, {:lock, key, self(), true}, :infinity) do
-      :ok -> :ok # lock acquired
+      :ok -> key2lock(key) # lock acquired
       {:available, ^key} -> await(mutex, key, :infinity)
     end
   end
@@ -104,7 +124,7 @@ defmodule Mutex do
     now = System.system_time(:millisecond)
     case GenServer.call(mutex, {:lock, key, self(), true}, timeout) do
       :ok ->
-        :ok # lock acquired
+        key2lock(key) # lock acquired
       {:available, ^key} ->
         expires_at = now + timeout
         now2 = System.system_time(:millisecond)
@@ -124,44 +144,41 @@ defmodule Mutex do
   More information at the end of the
   [deadlocks section](https://hexdocs.pm/mutex/readme.html#avoiding-deadlocks).
   """
-  @spec await_all(mutex :: name, keys :: [key]) :: :ok
+  @spec await_all(mutex :: name, keys :: [key]) :: {:ok, Lock.t}
   def await_all(mutex, keys) do
     sorted = Enum.sort(keys)
-    await_sorted(mutex, sorted, :infinity)
+    await_sorted(mutex, sorted, :infinity, [])
   end
 
   # Waiting multiple keys and avoiding deadlocks. It is enough to simply lock
   # the keys sorted. @optimize send all keys to the server and get {locked,
   # busies} as reply, then start over with the busy ones
-  defp await_sorted(mutex, keys, timeout)
-
-  defp await_sorted(_mutex, [], :infinity),
-    do: :ok
-  defp await_sorted(mutex, [key | keys], :infinity) do
-    case await(mutex, key, :infinity) do
-      :ok -> await_sorted(mutex, keys, :infinity)
-    end
+  defp await_sorted(mutex, [key | keys], :infinity, locked_keys) do
+    _lock = await(mutex, key, :infinity)
+    await_sorted(mutex, keys, :infinity, [key | locked_keys])
   end
+  defp await_sorted(_mutex, [], :infinity, locked_keys),
+    do: keys2multilock(locked_keys)
+
+  defp keys2multilock(keys),
+    do: %Lock{type: :multi, keys: keys}
 
   @doc """
-  Tells the mutex to free the given key and immediately returns `:ok` without
+  Tells the mutex to free the given lock and immediately returns `:ok` without
   waiting for the actual release.
-  If the calling process is not the owner of the key, the key is *not* released
-  and an error is logged.
+  If the calling process is not the owner of the key(s), the key(s) is/are
+  *not* released and an error is logged.
   """
-  @spec release(mutex :: name, key :: key) :: :ok
-  def release(mutex, key) do
-    GenServer.cast(mutex, {:release, key, self()})
+  @spec release(mutex :: name, lock :: Lock.t) :: :ok
+  def release(mutex, %Lock{type: :single, key: key}),
+    do: release_key(mutex, key)
+  def release(mutex, %Lock{type: :multi, keys: keys}) do
+    Enum.each(keys, &release_key(mutex, &1))
     :ok
   end
 
-  @doc """
-  Release multipe keys sequentially, see `release/2`.
-  """
-  @spec release_all(mutex :: name, keys :: [key]) :: :ok
-  def release_all(mutex, keys) do
-    keys
-      |> Enum.each(&release(mutex, &1))
+  defp release_key(mutex, key) do
+    GenServer.cast(mutex, {:release, key, self()})
     :ok
   end
 
@@ -179,56 +196,47 @@ defmodule Mutex do
   Awaits a lock for the given key, executes the given fun and releases the lock
   immediately.
 
-  If an exeption is raised or thrown in the fun, the lock automatically
+  If an exeption is raised or thrown in the fun, the lock is automatically
   released.
   """
   @spec under(mutex :: name, key :: key, timeout :: timeout, fun :: ( -> any)) :: :ok
   def under(mutex, key, timeout \\ :infinity, fun) do
-    :ok = await(mutex, key, timeout)
-    try do
-      result2 = fun.()
-      release(mutex, key)
-      result2
-    rescue
-      e ->
-        stacktrace = System.stacktrace()
-        release(mutex, key)
-        Logger.error("Exception within lock: #{inspect e}")
-        reraise(e, stacktrace)
-    catch
-      :throw, term ->
-        Logger.error("Thrown within lock: #{inspect term}")
-        release(mutex, key)
-        throw(term)
-    end
+    lock = await(mutex, key, timeout)
+    apply_with_lock(mutex, lock, fun)
   end
+
   @doc """
-  Awaits a lock for the given key, executes the given fun and releases the lock
+  Awaits a lock for the given keys, executes the given fun and releases the lock
   immediately.
 
-  If an exeption is raised or thrown in the fun, the lock automatically
+  If an exeption is raised or thrown in the fun, the lock is automatically
   released.
   """
   @spec under_all(mutex :: name, keys :: [key], fun :: ( -> any)) :: :ok
-  def under_all(mutex, keys, timeout \\ :infinity, fun) do
-    :ok = await_all(mutex, keys)
+  def under_all(mutex, keys, fun) do
+    lock = await_all(mutex, keys)
+    apply_with_lock(mutex, lock, fun)
+  end
+
+  defp apply_with_lock(mutex, lock, fun) do
     try do
       result2 = fun.()
-      release(mutex, keys)
+      release(mutex, lock)
       result2
     rescue
       e ->
         stacktrace = System.stacktrace()
-        release(mutex, keys)
+        release(mutex, lock)
         Logger.error("Exception within lock: #{inspect e}")
         reraise(e, stacktrace)
     catch
       :throw, term ->
         Logger.error("Thrown within lock: #{inspect term}")
-        release(mutex, keys)
+        release(mutex, lock)
         throw(term)
     end
   end
+
 
   # -- Server Callbacks -------------------------------------------------------
 
@@ -290,7 +298,7 @@ defmodule Mutex do
   end
 
   def handle_info(info, state) do
-    IO.puts "Mut info : #{inspect info}"
+    Logger.warn "Mutex received unexpected info : #{inspect info}"
     {:noreply, state}
   end
 

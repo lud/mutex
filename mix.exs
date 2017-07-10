@@ -1,9 +1,9 @@
-defmodule Mut.Mixfile do
+defmodule Mutex.Mixfile do
   use Mix.Project
 
   def project do
     [
-      app: :mut,
+      app: :mutex,
       version: "1.0.0",
       elixir: "~> 1.4",
       build_embedded: Mix.env == :prod,
