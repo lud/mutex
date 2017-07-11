@@ -24,6 +24,7 @@ children = [
 ```
 
 Let's see a bad example of concurrent code without database transactions.
+
 ```elixir
 resource_id = :some_user_id
 update_user = fn(worker) ->
@@ -49,7 +50,7 @@ spawn(fn -> update_user.("worker 4") end)
 # [worker 2] Saving user in database. # Order is even lost
 # [worker 1] Saving user in database.
 # [worker 3] Saving user in database.
-```elixir
+```
 
 Serialized transactions could be a good fit for this specific case, but let's see a simple solution :
 
