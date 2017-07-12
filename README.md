@@ -54,7 +54,7 @@ spawn(fn -> update_user.("worker 4") end)
 
 Serialized transactions could be a good fit for this specific case, but let's see a simple solution :
 
-With a simple mutex mechanism, workers will be able to wait until the resource is saved in database before loading it, with the guarantee that any other worker will not be traying to touch the resource.
+With a simple mutex mechanism, workers will be able to wait until the resource is saved in database before loading it, with the guarantee that any other worker will not be able to touch the resource.
 
 Each worker will wait for the key identifying the resource to be available on the mutex and attempt to lock it. A key can be anything : `:my_resource`, `{User, user_id}`, `"http://example.com"` or more complex structures.
 
