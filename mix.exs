@@ -38,7 +38,7 @@ defmodule Mutex.Mixfile do
     [
       licenses: ["MIT"],
       maintainers: ["niahoo osef <dev@ooha.in>"],
-      links: [],
+      links: %{"Github" => "https://github.com/niahoo/mutex"},
     ]
   end
 end
