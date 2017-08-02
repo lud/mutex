@@ -1,6 +1,6 @@
 # A simple mutex for Elixir.
 
-`Mutex` is a simple mutex module that fits under your supervision tree and allows processes to work on shared ressources without one by one. This can be a simple alternative to database transactions. Also, `Mutex` supports multiple keys locking without deadlocks.
+`Mutex` is a simple mutex module that fits under your supervision tree and allows processes to work on shared ressources one by one. This can be a simple alternative to database transactions. Also, `Mutex` supports multiple keys locking without deadlocks.
 
 ## Installation
 
@@ -14,7 +14,7 @@ end
 
 ## Using Mutex
 
-A mutex is handled by a process that you can start in your supervision tree with [`child_spec(name)`](https://hexdocs.pm/mutex/Mutex.html#child_spec/1) :
+A mutex is handled by a process that you start in your supervision tree with [`child_spec(name)`](https://hexdocs.pm/mutex/Mutex.html#child_spec/1) :
 
 ```elixir
 children = [
@@ -38,7 +38,6 @@ end
 spawn(fn -> update_user.("worker 1") end)
 spawn(fn -> update_user.("worker 2") end)
 spawn(fn -> update_user.("worker 3") end)
-spawn(fn -> update_user.("worker 4") end)
 
 # Results :
 # [worker 1] Reading user from database.
@@ -52,7 +51,7 @@ spawn(fn -> update_user.("worker 4") end)
 # [worker 3] Saving user in database.
 ```
 
-Serialized transactions could be a good fit for this specific case, but let's see a simple solution :
+Serialized transactions could be a good fit for this specific case, but let's see another simple solution :
 
 With a simple mutex mechanism, workers will be able to wait until the resource is saved in database before loading it, with the guarantee that any other worker will not be able to touch the resource.
 
@@ -141,11 +140,11 @@ A deadlock would occur if the keys were locked one by one with a race condition 
     spawn fn -> handler_order(:user_1, :user_2) end # Process 1
     spawn fn -> handler_order(:user_2, :user_1) end # Process 2
 
-Process 1 will first lock `:user_1` and proces 2 will lock `:user_2`, and then each process is waiting for the key already locked by the other one.
+Process 1 will first lock `:user_1` and proces 2 will lock `:user_2`, and then each process is waiting for the key that is already locked by the other one.
 
-**If any process should have, at any given time, several keys locked, those keys must have been locked all at once.**
+**If any process should have, at any given time, several keys locked, those keys shall have been locked all at once.**
 
-This simple rule is mandatory and sufficient to be free from deadlocks, and `Mutex.await_all/2` is the simple way to respect that rule.
+This simple rule is mandatory and sufficient to be free from deadlocks, and `Mutex.await_all/2` is the simplest way to respect that rule.
 
     # Do this instead
 
@@ -155,4 +154,5 @@ This simple rule is mandatory and sufficient to be free from deadlocks, and `Mut
       Mutex.release(MyMutex, lock)
     end
 
-If you really have to lock keys in a loop, or in mutiple moment, the `Mutex.goodbye/1` function allows to simply release all the keys locked by the calling process in one call.
+If you really have to lock keys in a loop, or in mutiple moments, the `Mutex.goodbye/1` function allows to simply release all the keys locked by the calling process in one call.
+
