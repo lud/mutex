@@ -199,7 +199,7 @@ defmodule Mutex do
   If an exeption is raised or thrown in the fun, the lock is automatically
   released.
   """
-  @spec under(mutex :: name, key :: key, timeout :: timeout, fun :: ( -> any)) :: :ok
+  @spec under(mutex :: name, key :: key, timeout :: timeout, fun :: ( -> any)) :: any
   def under(mutex, key, timeout \\ :infinity, fun) do
     lock = await(mutex, key, timeout)
     apply_with_lock(mutex, lock, fun)
@@ -212,7 +212,7 @@ defmodule Mutex do
   If an exeption is raised or thrown in the fun, the lock is automatically
   released.
   """
-  @spec under_all(mutex :: name, keys :: [key], fun :: ( -> any)) :: :ok
+  @spec under_all(mutex :: name, keys :: [key], fun :: ( -> any)) :: any
   def under_all(mutex, keys, fun) do
     lock = await_all(mutex, keys)
     apply_with_lock(mutex, lock, fun)
