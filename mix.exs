@@ -8,7 +8,7 @@ defmodule Mutex.Mixfile do
       This package implements a simple mutex as a GenServer. It allows to await
       locked keys and handles locking multiple keys without deadlocks.
       """,
-      version: "1.0.1",
+      version: "1.0.2",
       elixir: "~> 1.4",
       build_embedded: Mix.env == :prod,
       start_permanent: Mix.env == :prod,
@@ -31,6 +31,7 @@ defmodule Mutex.Mixfile do
     [
       {:ex_doc, "~> 0.14", only: :dev, runtime: false},
       {:dogma, "~> 0.1.15", only: :dev},
+      {:dialyxir, "~> 0.4", only: :dev, runtime: false},
     ]
   end
 

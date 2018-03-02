@@ -106,7 +106,7 @@ defmodule Mutex do
   More information in the [timeouts](https://hexdocs.pm/elixir/GenServer.html#call/3-timeouts)
   section.
   """
-  @spec await(mutex :: name, key :: key, timeout :: timeout) :: {:ok, Lock.t}
+  @spec await(mutex :: name, key :: key, timeout :: timeout) :: Lock.t
   def await(mutex, key, timeout \\ 5000)
 
   def await(mutex, key, timeout) when is_integer(timeout) and timeout < 0 do
@@ -144,7 +144,7 @@ defmodule Mutex do
   More information at the end of the
   [deadlocks section](https://hexdocs.pm/mutex/readme.html#avoiding-deadlocks).
   """
-  @spec await_all(mutex :: name, keys :: [key]) :: {:ok, Lock.t}
+  @spec await_all(mutex :: name, keys :: [key]) :: Lock.t
   def await_all(mutex, keys) do
     sorted = Enum.sort(keys)
     await_sorted(mutex, sorted, :infinity, [])
