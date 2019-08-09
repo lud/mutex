@@ -59,6 +59,14 @@ defmodule Mutex do
   end
 
   @doc """
+  Fetch the metadata of the mutex.
+  """
+  @spec get_meta(mutex :: name) :: any
+  def get_meta(mutex) do
+    GenServer.call(mutex, :get_meta)
+  end
+
+  @doc """
   Attemps to lock a resource on the mutex and returns immediately with the
   result, which is either a `Mutex.Lock` structure or `{:error, :busy}`.
   """
@@ -149,7 +157,7 @@ defmodule Mutex do
   [deadlocks section](https://hexdocs.pm/mutex/readme.html#avoiding-deadlocks).
   """
   @spec await_all(mutex :: name, keys :: [key]) :: Lock.t()
-  def await_all(mutex, keys) do
+  def await_all(mutex, keys) when is_list(keys) and length(keys) > 0 do
     sorted = Enum.sort(keys)
     await_sorted(mutex, sorted, :infinity, [])
   end
@@ -157,16 +165,20 @@ defmodule Mutex do
   # Waiting multiple keys and avoiding deadlocks. It is enough to simply lock
   # the keys sorted. @optimize send all keys to the server and get {locked,
   # busies} as reply, then start over with the busy ones
+
+  # On the last key we extract the metadata
+  defp await_sorted(mutex, [last | []], :infinity, locked_keys) do
+    %Lock{meta: meta} = await(mutex, last, :infinity)
+    keys2multilock([last | locked_keys], meta)
+  end
+
   defp await_sorted(mutex, [key | keys], :infinity, locked_keys) do
     _lock = await(mutex, key, :infinity)
     await_sorted(mutex, keys, :infinity, [key | locked_keys])
   end
 
-  defp await_sorted(_mutex, [], :infinity, locked_keys),
-    do: keys2multilock(locked_keys)
-
-  defp keys2multilock(keys),
-    do: %Lock{type: :multi, keys: keys}
+  defp keys2multilock(keys, meta),
+    do: %Lock{type: :multi, keys: keys, meta: meta}
 
   @doc """
   Tells the mutex to free the given lock and immediately returns `:ok` without
@@ -199,36 +211,57 @@ defmodule Mutex do
   end
 
   @doc """
-  Awaits a lock for the given key, executes the given fun and releases the lock
-  immediately.
+  Awaits a lock for the given key, executes the given fun and releases
+  the lock immediately.
 
-  If an exeption is raised or thrown in the fun, the lock is automatically
-  released.
+  If an exeption is raised or thrown in the fun, the lock is
+  automatically released.
+
+  If a function of arity 1 is given, it will be passed the lock.
+  Otherwise the arity must be 0. You should not manually release the
+  lock within the function.
   """
-  @spec under(mutex :: name, key :: key, timeout :: timeout, fun :: (() -> any)) :: any
-  def under(mutex, key, timeout \\ :infinity, fun) do
+  @spec under(
+          mutex :: name,
+          key :: key,
+          timeout :: timeout,
+          fun :: (() -> any) | (Lock.t() -> any)
+        ) :: any
+  def under(mutex, key, timeout \\ :infinity, fun)
+
+  def under(mutex, key, timeout, fun) when is_function(fun, 0),
+    do: under(mutex, key, timeout, fn _ -> fun.() end)
+
+  def under(mutex, key, timeout, fun) when is_function(fun, 1) do
     lock = await(mutex, key, timeout)
     apply_with_lock(mutex, lock, fun)
   end
 
   @doc """
-  Awaits a lock for the given keys, executes the given fun and releases the lock
-  immediately.
+  Awaits a lock for the given keys, executes the given fun and
+  releases the lock immediately.
 
-  If an exeption is raised or thrown in the fun, the lock is automatically
-  released.
+  If an exeption is raised or thrown in the fun, the lock is
+  automatically released.
+
+  If a function of arity 1 is given, it will be passed the lock.
+  Otherwise the arity must be 0. You should not manually release the
+  lock within the function.
   """
-  @spec under_all(mutex :: name, keys :: [key], fun :: (() -> any)) :: any
-  def under_all(mutex, keys, fun) do
+  @spec under_all(mutex :: name, keys :: [key], fun :: (() -> any) | (Lock.t() -> any)) :: any
+  def under_all(mutex, keys, fun) when is_function(fun, 0),
+    do: under_all(mutex, keys, fn _ -> fun.() end)
+
+  def under_all(mutex, keys, fun) when is_function(fun, 1) do
     lock = await_all(mutex, keys)
     apply_with_lock(mutex, lock, fun)
   end
 
   defp apply_with_lock(mutex, lock, fun) do
     try do
-      result2 = fun.()
+      result = fun.(lock)
       release(mutex, lock)
-      result2
+      result
     rescue
       e ->
         stacktrace = System.stacktrace()
@@ -258,6 +291,10 @@ defmodule Mutex do
   def init(opts) do
     send(self(), {:cleanup, opts[:cleanup_interval]})
     {:ok, %S{meta: opts[:meta]}}
+  end
+
+  def handle_call(:get_meta, _from, state) do
+    {:reply, state.meta, state}
   end
 
   def handle_call({:lock, key, pid, wait?}, from, state) do

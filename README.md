@@ -162,7 +162,9 @@ If you really have to lock keys in a loop, or in mutiple moments, the `Mutex.goo
 
 A mutex can hold metadata that will be assigned to each lock. The metadata is set upon initialization (given as `:meta` in the child spec in your supervisor, or in the options for `Mutex.start` or `Mutex.start_link`).
 
-The metadata is sent to any client that locks a key or a group of keys:
+Metadata can be fetched at anytime with `Mutex.get_meta/1`.
+
+The metadata is also sent to any client that locks a key or a group of keys:
 
 ```
 {:ok, pid} = Mutex.start_link(meta: :some_data)
@@ -170,3 +172,5 @@ The metadata is sent to any client that locks a key or a group of keys:
 lock.meta === :some_data
 Mutex.Lock.get_meta(lock) === :some_data
 ```
+
+The lock will also be passed to a fun if its arity is `1` when using `Mutex.under/4` and `Mutex.under_all/3`. The arity of the fun can also be `0`. Releasing the lock within the fun is still useless as it will be automatically release as for 0-arity funs, and could give other processes the ability to lock the keys before the fun execution is complete.
