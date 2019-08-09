@@ -11,18 +11,20 @@ defmodule MutexTest do
     children = [
       Mutex.child_spec(@mut)
     ]
+
     {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
     :ok
   end
 
   test "bad example README" do
-    update_user = fn(worker) ->
-      IO.puts "[#{worker}] Reading user from database."
+    update_user = fn worker ->
+      IO.puts("[#{worker}] Reading user from database.")
       Process.sleep(250)
-      IO.puts "[#{worker}] Working with user."
+      IO.puts("[#{worker}] Working with user.")
       Process.sleep(250)
-      IO.puts "[#{worker}] Saving user in database."
+      IO.puts("[#{worker}] Saving user in database.")
     end
+
     spawn(fn -> update_user.("worker 1") end)
     spawn(fn -> update_user.("worker 2") end)
     spawn(fn -> update_user.("worker 3") end)
@@ -30,15 +32,17 @@ defmodule MutexTest do
 
   test "good example README" do
     resource_id = {User, {:id, 1}}
-    update_user = fn(worker) ->
+
+    update_user = fn worker ->
       lock = Mutex.await(@mut, resource_id)
-      IO.puts "[#{worker}] Reading user from database."
+      IO.puts("[#{worker}] Reading user from database.")
       Process.sleep(250)
-      IO.puts "[#{worker}] Working with user."
+      IO.puts("[#{worker}] Working with user.")
       Process.sleep(250)
-      IO.puts "[#{worker}] Saving user in database."
+      IO.puts("[#{worker}] Saving user in database.")
       Mutex.release(@mut, lock)
     end
+
     spawn(fn -> update_user.("worker 4") end)
     spawn(fn -> update_user.("worker 5") end)
     spawn(fn -> update_user.("worker 6") end)
@@ -54,22 +58,26 @@ defmodule MutexTest do
 
   test "can't acquire locked key" do
     {ack, wack} = awack()
-    spawn(fn() ->
+
+    spawn(fn ->
       Mutex.lock!(@mut, :key1)
       ack.()
       Process.sleep(1000)
     end)
+
     wack.()
     assert {:error, :busy} = Mutex.lock(@mut, :key1)
   end
 
   test "can't release a key if not owner or if not registered" do
     {ack, wack} = awack()
-    spawn(fn() ->
+
+    spawn(fn ->
       Mutex.lock!(@mut, :not_mine)
       ack.()
       Process.sleep(1000)
     end)
+
     wack.()
     # It's a cast() so it always return ok
     assert :ok = Mutex.release(@mut, %Lock{type: :single, key: :not_mine})
@@ -82,32 +90,39 @@ defmodule MutexTest do
     {ack, wack} = awack()
     lock = Mutex.await_all(@mut, [:all_1, :all_2])
     Process.sleep(200)
+
     spawn(fn ->
       Mutex.await_all(@mut, [:all_2, :all_1])
       ack.()
     end)
+
     :ok = Mutex.release(@mut, lock)
     assert :ok = wack.()
   end
 
   test "can wait for key is released when owner dies" do
     {ack, wack} = awack()
-    spawn(fn() ->
+
+    spawn(fn ->
       Mutex.lock!(@mut, :key2)
       ack.()
       Process.sleep(100)
     end)
+
     wack.()
     assert %Lock{} = Mutex.await(@mut, :key2, 500)
   end
 
   test "a wait-for-lock should timeout" do
     {ack, wack} = awack()
-    pid = spawn(fn() ->
-      Mutex.lock!(@mut, :key3)
-      ack.()
-      Process.sleep(10_0000)
-    end)
+
+    pid =
+      spawn(fn ->
+        Mutex.lock!(@mut, :key3)
+        ack.()
+        Process.sleep(10_0000)
+      end)
+
     wack.()
     assert {:timeout, _} = catch_exit(Mutex.await(@mut, :key3, 500))
     Process.exit(pid, :normal)
@@ -115,35 +130,45 @@ defmodule MutexTest do
 
   test "can wait infinitely" do
     {ack, wack} = awack()
-    locker_pid = spawn(fn() ->
-      Mutex.lock!(@mut, :inf_key)
-      ack.()
-      hang()
-    end)
+
+    locker_pid =
+      spawn(fn ->
+        Mutex.lock!(@mut, :inf_key)
+        ack.()
+        hang()
+      end)
+
     wack.()
     {ack, wack} = awack(:infinity)
-    spawn(fn() ->
+
+    spawn(fn ->
       assert {:error, :busy} = Mutex.lock(@mut, :inf_key)
       assert %Lock{} = Mutex.await(@mut, :inf_key, :infinity)
       ack.()
     end)
+
     kill(locker_pid, 1000)
     refute Process.alive?(locker_pid)
-    assert :ok = wack.() # the second process managed to lock
+    # the second process managed to lock
+    assert :ok = wack.()
   end
 
   test "Bad Concurrency" do
     filename = "test/tmp/wrong-file.txt"
     setup_test_file(filename)
+
     for _ <- 1..10 do
       {ack, wack} = awack()
+
       spawn(fn ->
         dummy_increment_file(filename)
         ack.()
       end)
+
       wack
     end
-    |> Enum.each(fn(wack) -> wack.() end)
+    |> Enum.each(fn wack -> wack.() end)
+
     # file val was read from all process at 0, then written incremented
     # so the file is "1"
     assert "1" = File.read!(filename)
@@ -152,18 +177,23 @@ defmodule MutexTest do
   test "Mutexex Concurrency" do
     filename = "test/tmp/good-file.txt"
     setup_test_file(filename)
+
     for _ <- 1..10 do
       {ack, wack} = awack(10_000)
+
       spawn(fn ->
         assert (lock = %Lock{}) = Mutex.await(@mut, :good_file, 5000)
         dummy_increment_file(filename)
         assert :ok = Mutex.release(@mut, lock)
-        Process.sleep(1000) # ensure release is useful
+        # ensure release is useful
+        Process.sleep(1000)
         ack.()
       end)
+
       wack
     end
-    |> Enum.map(fn(wack) -> wack.() end)
+    |> Enum.map(fn wack -> wack.() end)
+
     # file val was read from all process at 0, then written incremented
     # so the file is "1"
     assert "10" = File.read!(filename)
@@ -178,43 +208,50 @@ defmodule MutexTest do
         {pid, key}
       end
 
-    {cleanup_pids, _} = lockers |> Enum.unzip
+    {cleanup_pids, _} = lockers |> Enum.unzip()
     Process.sleep(200)
     # We spawn processes that will attemp to lock all their given keys. All the
     # keys list share some common keys. When done, they call their ack function.
     # We will wait for all the acks to be received (with wacks), which means
     # that all the locking processes have managed to lock their keys.
-    wacks = for i <- 1..3 do
-      # spawn 3 process locking with competing keys
-      keys3 = [c: i, d: i, e: i, f: i] |> Enum.shuffle()
-      keys2 = [b: i, c: i, d: i, e: i] |> Enum.shuffle()
-      keys1 = [a: i, b: i, c: i, d: i] |> Enum.shuffle()
-      locker = fn(ack, keys) ->
-        lock = Mutex.await_all(@mut, keys)
-        Process.sleep(1000)
-        Mutex.release(@mut, lock)
-        ack.()
+    wacks =
+      for i <- 1..3 do
+        # spawn 3 process locking with competing keys
+        keys3 = [c: i, d: i, e: i, f: i] |> Enum.shuffle()
+        keys2 = [b: i, c: i, d: i, e: i] |> Enum.shuffle()
+        keys1 = [a: i, b: i, c: i, d: i] |> Enum.shuffle()
+
+        locker = fn ack, keys ->
+          lock = Mutex.await_all(@mut, keys)
+          Process.sleep(1000)
+          Mutex.release(@mut, lock)
+          ack.()
+        end
+
+        {ack1, wack1} = awack(:infinity)
+        {ack2, wack2} = awack(:infinity)
+        {ack3, wack3} = awack(:infinity)
+        spawn(fn -> locker.(ack1, keys1) end)
+        spawn(fn -> locker.(ack2, keys2) end)
+        spawn(fn -> locker.(ack3, keys3) end)
+        # return the wacks
+        [wack1, wack2, wack3]
       end
-      {ack1, wack1} = awack(:infinity)
-      {ack2, wack2} = awack(:infinity)
-      {ack3, wack3} = awack(:infinity)
-      spawn(fn -> locker.(ack1, keys1) end)
-      spawn(fn -> locker.(ack2, keys2) end)
-      spawn(fn -> locker.(ack3, keys3) end)
-      # return the wacks
-      [wack1, wack2, wack3]
-    end
+
     wacks
-      |> List.flatten
-      |> Enum.each(fn(wack) -> :ok = wack.() end)
+    |> List.flatten()
+    |> Enum.each(fn wack -> :ok = wack.() end)
+
     Process.sleep(1000)
     assert %Lock{} = Mutex.await(@mut, :multi_1, :infinity)
+
     cleanup_pids
-      |> Enum.each(&kill(&1))
+    |> Enum.each(&kill(&1))
   end
 
   test "if a fun throws within wrapper, the lock should be released" do
     {ack, wack} = awack(:infinity)
+
     spawn_hang(fn ->
       # here we catch so the process does not exit, so the lock is not released
       # because of an exit (false positive) but because the lib removes it
@@ -227,6 +264,7 @@ defmodule MutexTest do
         :throw, :fail -> :ok
       end
     end)
+
     wack.()
     assert %Lock{} = Mutex.await(@mut, :wrap1, 1000)
   end
@@ -235,27 +273,33 @@ defmodule MutexTest do
     {ack, wack} = awack(:infinity)
     errmsg = "You failed me !"
     keys = [:wrap_mult_1, :wrap_mult_2]
+
     spawn_hang(fn ->
       try do
         Mutex.under_all(@mut, keys, fn ->
           ack.()
-          Logger.debug "Will raise #{errmsg}"
+          Logger.debug("Will raise #{errmsg}")
           raise errmsg
-          Logger.debug "rose"
+          Logger.debug("rose")
         end)
       rescue
         e in _ ->
           case e do
             %{message: msg} ->
-              Logger.debug "Rescued"
+              Logger.debug("Rescued")
               assert ^errmsg = msg
               :ok
+
             e ->
-              Logger.debug "Rescued unexcepted exception #{inspect e}\n#{inspect System.stacktrace()}"
+              Logger.debug(
+                "Rescued unexcepted exception #{inspect(e)}\n#{inspect(System.stacktrace())}"
+              )
+
               :ok
-            end
+          end
       end
     end)
+
     wack.()
     assert %Lock{} = Mutex.await(@mut, :wrap1, 1000)
   end
@@ -263,7 +307,8 @@ defmodule MutexTest do
   @tag skip: false
   test "goodbye mechanism" do
     {ack, wack} = awack(:infinity)
-    spawn_hang(fn() ->
+
+    spawn_hang(fn ->
       Mutex.lock!(@mut, :hello_1)
       Mutex.lock!(@mut, :hello_2)
       Mutex.lock!(@mut, :hello_3)
@@ -271,6 +316,7 @@ defmodule MutexTest do
       Process.sleep(1000)
       Mutex.goodbye(@mut)
     end)
+
     wack.()
     assert %Lock{} = Mutex.await(@mut, :hello_1, 2000)
     assert %Lock{} = Mutex.await(@mut, :hello_2, 2000)
@@ -282,7 +328,7 @@ defmodule MutexTest do
   # spawns a process that loop forever and locks <key> for <tin> time, release,
   # wait for <tout> time and start over
   def spawn_locker(mutex, key, tin \\ 200, tout \\ 150) do
-    spawn(fn() ->
+    spawn(fn ->
       locker_loop(mutex, key, tin, tout)
     end)
   end
@@ -305,7 +351,8 @@ defmodule MutexTest do
     # stupid way that allows simple writes race conditions fully enabled ;)
     {value, ""} =
       File.read!(filename)
-        |> Integer.parse()
+      |> Integer.parse()
+
     Process.sleep(sleep)
     File.write!(filename, Integer.to_string(value + 1))
   end
@@ -313,16 +360,19 @@ defmodule MutexTest do
   def awack(timeout \\ 5000) do
     this = self()
     ref = make_ref()
-    ack = fn() ->
+
+    ack = fn ->
       send(this, ref)
     end
-    wack = fn() ->
+
+    wack = fn ->
       receive do
         ^ref -> :ok
       after
         timeout -> exit(:timeout)
       end
     end
+
     {ack, wack}
   end
 
@@ -335,7 +385,7 @@ defmodule MutexTest do
 
   def hang do
     receive do
-      :stop -> Logger.debug "Hangin stops"
+      :stop -> Logger.debug("Hangin stops")
     after
       1000 -> hang()
     end

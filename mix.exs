@@ -10,15 +10,15 @@ defmodule Mutex.Mixfile do
       """,
       version: "1.0.2",
       elixir: "~> 1.4",
-      build_embedded: Mix.env == :prod,
-      start_permanent: Mix.env == :prod,
+      build_embedded: Mix.env() == :prod,
+      start_permanent: Mix.env() == :prod,
       deps: deps(),
       name: "Mutex",
       docs: [
         main: "readme",
-        extras: ["README.md"],
+        extras: ["README.md"]
       ],
-      package: package(),
+      package: package()
     ]
   end
 
@@ -31,7 +31,7 @@ defmodule Mutex.Mixfile do
     [
       {:ex_doc, "~> 0.14", only: :dev, runtime: false},
       {:dogma, "~> 0.1.15", only: :dev},
-      {:dialyxir, "~> 0.4", only: :dev, runtime: false},
+      {:dialyxir, "~> 0.4", only: :dev, runtime: false}
     ]
   end
 
@@ -39,7 +39,7 @@ defmodule Mutex.Mixfile do
     [
       licenses: ["MIT"],
       maintainers: ["niahoo osef <dev@ooha.in>"],
-      links: %{"Github" => "https://github.com/niahoo/mutex"},
+      links: %{"Github" => "https://github.com/niahoo/mutex"}
     ]
   end
 end

@@ -14,15 +14,16 @@ defmodule Mutex do
     locking functions in `Mutex`.
     """
     defstruct [:type, :key, :keys]
+
     @typedoc """
     The struct containing the key(s) locked during a lock operation. `:type`
     specifies wether there is one or more keys.
     """
     @type t :: %__MODULE__{
-      type: :single | :multi,
-      key: nil | Mutex.key,
-      keys: nil | [Mutex.key]
-    }
+            type: :single | :multi,
+            key: nil | Mutex.key(),
+            keys: nil | [Mutex.key()]
+          }
   end
 
   @moduledoc """
@@ -36,7 +37,7 @@ defmodule Mutex do
   Returns a child specification to integrate the mutex in a supervision tree.
   The passed name is an atom, it will be the registered name for the mutex.
   """
-  @spec child_spec(name :: name) :: Supervisor.Spec.spec
+  @spec child_spec(name :: name) :: Supervisor.Spec.spec()
   def child_spec(name) when is_atom(name) do
     Supervisor.Spec.supervisor(__MODULE__, [[name: name]])
   end
@@ -46,7 +47,7 @@ defmodule Mutex do
   for a `GenServer`, it's a good place to set the name for registering the
   process.
   """
-  @spec start(opts :: GenServer.options) :: GenServer.on_start
+  @spec start(opts :: GenServer.options()) :: GenServer.on_start()
   def start(opts \\ []) do
     GenServer.start(__MODULE__, :noargs, opts)
   end
@@ -56,7 +57,7 @@ defmodule Mutex do
   as options for a `GenServer`, it's a good place to set the name for
   registering the process.
   """
-  @spec start_link(opts :: GenServer.options) :: GenServer.on_start
+  @spec start_link(opts :: GenServer.options()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, :noargs, opts)
   end
@@ -65,7 +66,7 @@ defmodule Mutex do
   Attemps to lock a resource on the mutex and returns immediately with the
   result, which is either a `Mutex.Lock` structure or `{:error, :busy}`.
   """
-  @spec lock(name :: name, key :: key) :: {:ok, Lock.t} | {:error, :busy}
+  @spec lock(name :: name, key :: key) :: {:ok, Lock.t()} | {:error, :busy}
   def lock(mutex, key) do
     case GenServer.call(mutex, {:lock, key, self(), false}) do
       :ok -> {:ok, key2lock(key)}
@@ -80,12 +81,15 @@ defmodule Mutex do
   Attemps to lock a resource on the mutex and returns immediately with the lock
   or raises an exception if the key is already locked.
   """
-  @spec lock!(name :: name, key :: key) :: Lock.t
+  @spec lock!(name :: name, key :: key) :: Lock.t()
   def lock!(mutex, key) do
     case lock(mutex, key) do
-      {:ok, lock} -> lock
-      err -> raise "Locking of key #{inspect key} is impossible, "
-              <> "the key is already locked (#{inspect err})."
+      {:ok, lock} ->
+        lock
+
+      err ->
+        raise "Locking of key #{inspect(key)} is impossible, " <>
+                "the key is already locked (#{inspect(err)})."
     end
   end
 
@@ -106,7 +110,7 @@ defmodule Mutex do
   More information in the [timeouts](https://hexdocs.pm/elixir/GenServer.html#call/3-timeouts)
   section.
   """
-  @spec await(mutex :: name, key :: key, timeout :: timeout) :: Lock.t
+  @spec await(mutex :: name, key :: key, timeout :: timeout) :: Lock.t()
   def await(mutex, key, timeout \\ 5000)
 
   def await(mutex, key, timeout) when is_integer(timeout) and timeout < 0 do
@@ -115,16 +119,20 @@ defmodule Mutex do
 
   def await(mutex, key, :infinity) do
     case GenServer.call(mutex, {:lock, key, self(), true}, :infinity) do
-      :ok -> key2lock(key) # lock acquired
+      # lock acquired
+      :ok -> key2lock(key)
       {:available, ^key} -> await(mutex, key, :infinity)
     end
   end
 
   def await(mutex, key, timeout) do
     now = System.system_time(:millisecond)
+
     case GenServer.call(mutex, {:lock, key, self(), true}, timeout) do
       :ok ->
-        key2lock(key) # lock acquired
+        # lock acquired
+        key2lock(key)
+
       {:available, ^key} ->
         expires_at = now + timeout
         now2 = System.system_time(:millisecond)
@@ -144,7 +152,7 @@ defmodule Mutex do
   More information at the end of the
   [deadlocks section](https://hexdocs.pm/mutex/readme.html#avoiding-deadlocks).
   """
-  @spec await_all(mutex :: name, keys :: [key]) :: Lock.t
+  @spec await_all(mutex :: name, keys :: [key]) :: Lock.t()
   def await_all(mutex, keys) do
     sorted = Enum.sort(keys)
     await_sorted(mutex, sorted, :infinity, [])
@@ -157,6 +165,7 @@ defmodule Mutex do
     _lock = await(mutex, key, :infinity)
     await_sorted(mutex, keys, :infinity, [key | locked_keys])
   end
+
   defp await_sorted(_mutex, [], :infinity, locked_keys),
     do: keys2multilock(locked_keys)
 
@@ -169,9 +178,10 @@ defmodule Mutex do
   If the calling process is not the owner of the key(s), the key(s) is/are
   *not* released and an error is logged.
   """
-  @spec release(mutex :: name, lock :: Lock.t) :: :ok
+  @spec release(mutex :: name, lock :: Lock.t()) :: :ok
   def release(mutex, %Lock{type: :single, key: key}),
     do: release_key(mutex, key)
+
   def release(mutex, %Lock{type: :multi, keys: keys}) do
     Enum.each(keys, &release_key(mutex, &1))
     :ok
@@ -199,7 +209,7 @@ defmodule Mutex do
   If an exeption is raised or thrown in the fun, the lock is automatically
   released.
   """
-  @spec under(mutex :: name, key :: key, timeout :: timeout, fun :: ( -> any)) :: any
+  @spec under(mutex :: name, key :: key, timeout :: timeout, fun :: (() -> any)) :: any
   def under(mutex, key, timeout \\ :infinity, fun) do
     lock = await(mutex, key, timeout)
     apply_with_lock(mutex, lock, fun)
@@ -212,7 +222,7 @@ defmodule Mutex do
   If an exeption is raised or thrown in the fun, the lock is automatically
   released.
   """
-  @spec under_all(mutex :: name, keys :: [key], fun :: ( -> any)) :: any
+  @spec under_all(mutex :: name, keys :: [key], fun :: (() -> any)) :: any
   def under_all(mutex, keys, fun) do
     lock = await_all(mutex, keys)
     apply_with_lock(mutex, lock, fun)
@@ -227,26 +237,25 @@ defmodule Mutex do
       e ->
         stacktrace = System.stacktrace()
         release(mutex, lock)
-        Logger.error("Exception within lock: #{inspect e}")
+        Logger.error("Exception within lock: #{inspect(e)}")
         reraise(e, stacktrace)
     catch
       :throw, term ->
-        Logger.error("Thrown within lock: #{inspect term}")
+        Logger.error("Thrown within lock: #{inspect(term)}")
         release(mutex, lock)
         throw(term)
     end
   end
 
-
   # -- Server Callbacks -------------------------------------------------------
 
   defmodule S do
     @moduledoc false
-    defstruct [
-      locks: %{},
-      owns: %{}, # owner's pids
-      waiters: %{}, # waiters's gen_server from value
-    ]
+    defstruct locks: %{},
+              # owner's pids
+              owns: %{},
+              # waiters's gen_server from value
+              waiters: %{}
   end
 
   def init(:noargs) do
@@ -255,31 +264,35 @@ defmodule Mutex do
   end
 
   def handle_call({:lock, key, pid, wait?}, from, state) do
-      case Map.fetch(state.locks, key) do
-        {:ok, _owner} ->
-          if wait? do
-            {:noreply, set_waiter(state, key, from)}
-          else
-            {:reply, {:error, :busy}, state}
-          end
-        :error ->
-          {:reply, :ok, set_lock(state, key, pid)}
-      end
+    case Map.fetch(state.locks, key) do
+      {:ok, _owner} ->
+        if wait? do
+          {:noreply, set_waiter(state, key, from)}
+        else
+          {:reply, {:error, :busy}, state}
+        end
+
+      :error ->
+        {:reply, :ok, set_lock(state, key, pid)}
+    end
   end
 
   def handle_cast({:release, key, pid}, state) do
     case Map.fetch(state.locks, key) do
       {:ok, ^pid} ->
         {:noreply, rm_lock(state, key, pid)}
+
       {:ok, other_pid} ->
-        Logger.error "Could not release #{key}, bad owner", [
-          key: key, owner: other_pid, attempt: pid
-        ]
+        Logger.error("Could not release #{key}, bad owner",
+          key: key,
+          owner: other_pid,
+          attempt: pid
+        )
+
         {:noreply, state}
+
       :error ->
-        Logger.error "Could not release #{key}, not found", [
-          key: key, attempt: pid
-        ]
+        Logger.error("Could not release #{key}, not found", key: key, attempt: pid)
         {:noreply, state}
     end
   end
@@ -298,7 +311,7 @@ defmodule Mutex do
   end
 
   def handle_info(info, state) do
-    Logger.warn "Mutex received unexpected info : #{inspect info}"
+    Logger.warn("Mutex received unexpected info : #{inspect(info)}")
     {:noreply, state}
   end
 
@@ -306,75 +319,102 @@ defmodule Mutex do
 
   defp set_lock(state = %S{locks: locks, owns: owns}, key, pid) do
     # Logger.debug "LOCK #{inspect key}"
-    new_locks = locks
+    new_locks =
+      locks
       |> Map.put(key, pid)
+
     ref = Process.monitor(pid)
     keyref = {key, ref}
-    new_owns = owns
-      |>  Map.update(pid, [keyref], fn(keyrefs) -> [keyref | keyrefs] end)
+
+    new_owns =
+      owns
+      |> Map.update(pid, [keyref], fn keyrefs -> [keyref | keyrefs] end)
+
     %S{state | locks: new_locks, owns: new_owns}
   end
 
   defp rm_lock(state = %S{locks: locks, owns: owns}, key, pid) do
     # Logger.debug "RELEASE #{inspect key}"
     # pid must be the owner here. Checked in handle_cast
-    new_locks = locks
+    new_locks =
+      locks
       |> Map.drop([key])
-    new_owns = owns
-      |> Map.update(pid, [], fn(keyrefs) ->
-          {{_key, ref}, new_keyrefs} = List.keytake(keyrefs, key, 0)
-          Process.demonitor(ref)
-          new_keyrefs
-         end)
+
+    new_owns =
+      owns
+      |> Map.update(pid, [], fn keyrefs ->
+        {{_key, ref}, new_keyrefs} = List.keytake(keyrefs, key, 0)
+        Process.demonitor(ref)
+        new_keyrefs
+      end)
+
     state.waiters
-      |> Map.get(key, [])
-      |> notify_waiters(key)
-    new_waiters = state.waiters
+    |> Map.get(key, [])
+    |> notify_waiters(key)
+
+    new_waiters =
+      state.waiters
       |> Map.drop([key])
+
     %S{state | locks: new_locks, owns: new_owns, waiters: new_waiters}
   end
 
   defp clear_owner(state = %S{locks: locks, owns: owns}, pid, type) do
     {keys, refs} =
       owns
-        |> Map.get(pid, [])
-        |> Enum.unzip
+      |> Map.get(pid, [])
+      |> Enum.unzip()
+
     if length(keys) > 0 do
       # Logger.debug "RELEASE ALL (#{type}) #{inspect keys}"
     end
-    new_locks = locks
+
+    new_locks =
+      locks
       |> Map.drop(keys)
+
     # sure that monitors are cleaned up ?
     if(type !== :DOWN,
-      do: Enum.each(refs, &Process.demonitor/1))
+      do: Enum.each(refs, &Process.demonitor/1)
+    )
+
     state.waiters
-      |> Map.take(keys)
-      |> Enum.map(fn({key, froms}) ->
-          notify_waiters(froms, key)
-         end)
-    new_waiters = state.waiters
+    |> Map.take(keys)
+    |> Enum.map(fn {key, froms} ->
+      notify_waiters(froms, key)
+    end)
+
+    new_waiters =
+      state.waiters
       |> Map.drop(keys)
-    new_owns = owns
+
+    new_owns =
+      owns
       |> Map.drop([pid])
+
     %S{state | locks: new_locks, owns: new_owns, waiters: new_waiters}
   end
 
   defp set_waiter(state = %S{waiters: waiters}, key, from) do
     # Maybe we should monitor the waiter to not send useless message when the
     # key is available if the waiter is down ?
-    new_waiters = waiters
-      |> Map.update(key, [from], fn(waiters) -> [from | waiters] end)
+    new_waiters =
+      waiters
+      |> Map.update(key, [from], fn waiters -> [from | waiters] end)
+
     %S{state | waiters: new_waiters}
   end
 
   defp cleanup(state = %S{owns: owns}) do
     # remove empty owns
-    new_owns = owns
+    new_owns =
+      owns
       |> Enum.filter(fn
-          ({_pid, []}) -> false
-          (_) -> true
-         end)
+        {_pid, []} -> false
+        _ -> true
+      end)
       |> Enum.into(%{})
+
     %S{state | owns: new_owns}
   end
 
@@ -388,13 +428,13 @@ defmodule Mutex do
     # others.
     Task.start_link(fn ->
       froms
-        |> Enum.reverse()
-        |> Enum.map(fn(from) ->
-            GenServer.reply(from, {:available, key})
-            Process.sleep(50)
-           end)
+      |> Enum.reverse()
+      |> Enum.map(fn from ->
+        GenServer.reply(from, {:available, key})
+        Process.sleep(50)
+      end)
     end)
+
     :ok
   end
-
 end
