@@ -8,17 +8,19 @@ This package can be installed by adding `mutex` to your list of dependencies in 
 
 ```elixir
 def deps do
-  [{:mutex, "~> 1.0.0"}]
+  [{:mutex, "~> 1.1.0"}]
 end
 ```
 
 ## Using Mutex
 
-A mutex is handled by a process that you start in your supervision tree with [`child_spec(name)`](https://hexdocs.pm/mutex/Mutex.html#child_spec/1) :
+A mutex is handled by a process that you start in your supervision tree with [`child_spec(name)`](https://hexdocs.pm/mutex/Mutex.html#child_spec/1).
+
+Options can be an atom (used as the `GenServer` name), or a `Keyword` with [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0) and a `:meta` option to set the metadata.
 
 ```elixir
 children = [
-  Mutex.child_spec(MyMutex)
+  {Mutex, name: MyMutex, meta: some_data}
 ]
 {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
 ```
@@ -26,7 +28,7 @@ children = [
 Let's see a bad example of concurrent code without database transactions.
 
 ```elixir
-resource_id = :some_user_id
+resource_id = :some_user_id # unused in example
 update_user = fn(worker) ->
   IO.puts "[#{worker}] Reading user from database."
   Process.sleep(250)
@@ -46,7 +48,7 @@ spawn(fn -> update_user.("worker 3") end)
 # [worker 1] Working with user.
 # [worker 2] Working with user.
 # [worker 3] Working with user.
-# [worker 2] Saving user in database. # Order is even lost
+# [worker 2] Saving user in database. # 2 before 1 !
 # [worker 1] Saving user in database.
 # [worker 3] Saving user in database.
 ```
@@ -137,10 +139,10 @@ A deadlock would occur if the keys were locked one by one with a race condition 
       Mutex.release(MyMutex, lock2)
     end
 
-    spawn fn -> handler_order(:user_1, :user_2) end # Process 1
-    spawn fn -> handler_order(:user_2, :user_1) end # Process 2
+    spawn(fn -> handler_order(:user_1, :user_2) end) # Process 1
+    spawn(fn -> handler_order(:user_2, :user_1) end) # Process 2
 
-Process 1 will first lock `:user_1` and proces 2 will lock `:user_2`, and then each process is waiting for the key that is already locked by the other one.
+Process 1 will first lock `:user_1` and process 2 will lock `:user_2`, and then each process is waiting for the key that is already locked by the other one.
 
 **If any process should have, at any given time, several keys locked, those keys shall have been locked all at once.**
 
@@ -156,3 +158,15 @@ This simple rule is mandatory and sufficient to be free from deadlocks, and `Mut
 
 If you really have to lock keys in a loop, or in mutiple moments, the `Mutex.goodbye/1` function allows to simply release all the keys locked by the calling process in one call.
 
+## Metadata
+
+A mutex can hold metadata that will be assigned to each lock. The metadata is set upon initialization (given as `:meta` in the child spec in your supervisor, or in the options for `Mutex.start` or `Mutex.start_link`).
+
+The metadata is sent to any client that locks a key or a group of keys:
+
+```
+{:ok, pid} = Mutex.start_link(meta: :some_data)
+{:ok, lock} = Mutex.lock(pid, :some_key)
+lock.meta === :some_data
+Mutex.Lock.get_meta(lock) === :some_data
+```

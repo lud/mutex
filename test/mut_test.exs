@@ -5,11 +5,9 @@ defmodule MutexTest do
   require Logger
   alias Mutex.Lock
 
-  @moduletag skip: false
-
   setup_all do
     children = [
-      Mutex.child_spec(@mut)
+      {Mutex, name: @mut, meta: :test_mutex}
     ]
 
     {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
@@ -53,7 +51,7 @@ defmodule MutexTest do
   end
 
   test "can acquire lock (can lock key)" do
-    assert {:ok, %Lock{}} = Mutex.lock(@mut, :some_key)
+    assert {:ok, %Lock{meta: :test_mutex}} = Mutex.lock(@mut, :some_key)
   end
 
   test "can't acquire locked key" do
@@ -210,10 +208,15 @@ defmodule MutexTest do
 
     {cleanup_pids, _} = lockers |> Enum.unzip()
     Process.sleep(200)
-    # We spawn processes that will attemp to lock all their given keys. All the
-    # keys list share some common keys. When done, they call their ack function.
-    # We will wait for all the acks to be received (with wacks), which means
-    # that all the locking processes have managed to lock their keys.
+    # We spawn processes that will attemp to lock all their given
+    # keys. All the keys list share some common keys. When done, they
+    # call their ack function. We will wait for all the acks to be
+    # received (with wacks), which means that all the locking
+    # processes have managed to lock their keys.
+
+    # The test is that with competing keys, and single-keys
+    # competitors, The processes can still manage to lock multiple
+    # keys.
     wacks =
       for i <- 1..3 do
         # spawn 3 process locking with competing keys
@@ -304,7 +307,6 @@ defmodule MutexTest do
     assert %Lock{} = Mutex.await(@mut, :wrap1, 1000)
   end
 
-  @tag skip: false
   test "goodbye mechanism" do
     {ack, wack} = awack(:infinity)
 
@@ -321,6 +323,22 @@ defmodule MutexTest do
     assert %Lock{} = Mutex.await(@mut, :hello_1, 2000)
     assert %Lock{} = Mutex.await(@mut, :hello_2, 2000)
     assert %Lock{} = Mutex.await(@mut, :hello_3, 2000)
+  end
+
+  test "mutex can hold metadata" do
+    # Simple value
+
+    {:ok, pid} = Mutex.start_link(meta: :some_data)
+    assert {:ok, lock} = Mutex.lock(pid, :some_key)
+    assert lock.meta === :some_data
+    assert Mutex.Lock.get_meta(lock) === :some_data
+
+    # Data structure
+
+    {:ok, pid} = Mutex.start_link(meta: %{some: [:nested, {:data, "structure"}]})
+    assert {:ok, lock} = Mutex.lock(pid, :some_key)
+    assert lock.meta === %{some: [:nested, {:data, "structure"}]}
+    assert Mutex.Lock.get_meta(lock) === %{some: [:nested, {:data, "structure"}]}
   end
 
   # -- helpers --------------------------------------------------------------
@@ -377,7 +395,7 @@ defmodule MutexTest do
   end
 
   def spawn_hang(fun) do
-    spawn(fn ->
+    spawn_link(fn ->
       fun.()
       hang()
     end)
@@ -386,8 +404,6 @@ defmodule MutexTest do
   def hang do
     receive do
       :stop -> Logger.debug("Hangin stops")
-    after
-      1000 -> hang()
     end
   end
 

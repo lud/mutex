@@ -1,6 +1,7 @@
 defmodule Mutex do
   require Logger
   use GenServer
+  alias Mutex.Lock
 
   @typedoc "The name of a mutex is an atom, registered with `Process.register/2`"
   @type name :: atom
@@ -8,58 +9,53 @@ defmodule Mutex do
   @typedoc "A key can be any term."
   @type key :: any
 
-  defmodule Lock do
-    @moduledoc """
-    This module defines a struct containing the key(s) locked with all the
-    locking functions in `Mutex`.
-    """
-    defstruct [:type, :key, :keys]
-
-    @typedoc """
-    The struct containing the key(s) locked during a lock operation. `:type`
-    specifies wether there is one or more keys.
-    """
-    @type t :: %__MODULE__{
-            type: :single | :multi,
-            key: nil | Mutex.key(),
-            keys: nil | [Mutex.key()]
-          }
-  end
-
   @moduledoc """
-  This is the only module in this application, it implements a mutex as a
+  This is the main module in this application, it implements a mutex as a
   GenServer with a notification system to be able to await lock releases.
 
   See [`README.md`](https://hexdocs.pm/mutex/readme.html) for how to use.
   """
 
   @doc """
-  Returns a child specification to integrate the mutex in a supervision tree.
-  The passed name is an atom, it will be the registered name for the mutex.
-  """
-  @spec child_spec(name :: name) :: Supervisor.Spec.spec()
-  def child_spec(name) when is_atom(name) do
-    Supervisor.Spec.supervisor(__MODULE__, [[name: name]])
-  end
-
-  @doc """
   Starts a mutex with no process linking. Given options are passed as options
   for a `GenServer`, it's a good place to set the name for registering the
   process.
+
+  See [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
+
+  A `:meta` key can also be given in options to set the mutex metadata.
   """
-  @spec start(opts :: GenServer.options()) :: GenServer.on_start()
+  @spec start(opts :: Keyword.t()) :: GenServer.on_start()
   def start(opts \\ []) do
-    GenServer.start(__MODULE__, :noargs, opts)
+    {gen_opts, opts} = get_opts(opts)
+    GenServer.start(__MODULE__, opts, gen_opts)
   end
 
   @doc """
   Starts a mutex with linking under a supervision tree. Given options are passed
   as options for a `GenServer`, it's a good place to set the name for
   registering the process.
+
+  See [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
+
+  A `:meta` key can also be given in options to set the mutex metadata.
   """
-  @spec start_link(opts :: GenServer.options()) :: GenServer.on_start()
+  @spec start_link(opts :: Keyword.t()) :: GenServer.on_start()
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, :noargs, opts)
+    {gen_opts, opts} = get_opts(opts)
+    GenServer.start_link(__MODULE__, opts, gen_opts)
+  end
+
+  @gen_opts [:debug, :name, :timeout, :spawn_opt, :hibernate_after]
+
+  defp get_opts(opts) when is_atom(opts),
+    do: get_opts(name: opts)
+
+  defp get_opts(opts) do
+    opts
+    |> Keyword.put_new(:meta, nil)
+    |> Keyword.put_new(:cleanup_interval, 1000)
+    |> Keyword.split(@gen_opts)
   end
 
   @doc """
@@ -69,13 +65,13 @@ defmodule Mutex do
   @spec lock(name :: name, key :: key) :: {:ok, Lock.t()} | {:error, :busy}
   def lock(mutex, key) do
     case GenServer.call(mutex, {:lock, key, self(), false}) do
-      :ok -> {:ok, key2lock(key)}
+      {:ok, meta} -> {:ok, key2lock(key, meta)}
       err -> err
     end
   end
 
-  defp key2lock(key),
-    do: %Lock{type: :single, key: key}
+  defp key2lock(key, meta),
+    do: %Lock{type: :single, key: key, meta: meta}
 
   @doc """
   Attemps to lock a resource on the mutex and returns immediately with the lock
@@ -120,7 +116,7 @@ defmodule Mutex do
   def await(mutex, key, :infinity) do
     case GenServer.call(mutex, {:lock, key, self(), true}, :infinity) do
       # lock acquired
-      :ok -> key2lock(key)
+      {:ok, meta} -> key2lock(key, meta)
       {:available, ^key} -> await(mutex, key, :infinity)
     end
   end
@@ -129,9 +125,9 @@ defmodule Mutex do
     now = System.system_time(:millisecond)
 
     case GenServer.call(mutex, {:lock, key, self(), true}, timeout) do
-      :ok ->
+      {:ok, meta} ->
         # lock acquired
-        key2lock(key)
+        key2lock(key, meta)
 
       {:available, ^key} ->
         expires_at = now + timeout
@@ -255,12 +251,13 @@ defmodule Mutex do
               # owner's pids
               owns: %{},
               # waiters's gen_server from value
-              waiters: %{}
+              waiters: %{},
+              meta: nil
   end
 
-  def init(:noargs) do
-    send(self(), :cleanup)
-    {:ok, %S{}}
+  def init(opts) do
+    send(self(), {:cleanup, opts[:cleanup_interval]})
+    {:ok, %S{meta: opts[:meta]}}
   end
 
   def handle_call({:lock, key, pid, wait?}, from, state) do
@@ -273,7 +270,7 @@ defmodule Mutex do
         end
 
       :error ->
-        {:reply, :ok, set_lock(state, key, pid)}
+        {:reply, {:ok, state.meta}, set_lock(state, key, pid)}
     end
   end
 
@@ -305,8 +302,8 @@ defmodule Mutex do
     {:noreply, clear_owner(state, pid, :DOWN)}
   end
 
-  def handle_info(:cleanup, state) do
-    Process.send_after(self(), :cleanup, 1000)
+  def handle_info({:cleanup, interval}, state) do
+    Process.send_after(self(), {:cleanup, interval}, interval)
     {:noreply, cleanup(state)}
   end
 
@@ -336,15 +333,13 @@ defmodule Mutex do
   defp rm_lock(state = %S{locks: locks, owns: owns}, key, pid) do
     # Logger.debug "RELEASE #{inspect key}"
     # pid must be the owner here. Checked in handle_cast
-    new_locks =
-      locks
-      |> Map.drop([key])
+    new_locks = Map.delete(locks, key)
 
     new_owns =
       owns
       |> Map.update(pid, [], fn keyrefs ->
         {{_key, ref}, new_keyrefs} = List.keytake(keyrefs, key, 0)
-        Process.demonitor(ref)
+        Process.demonitor(ref, [:flush])
         new_keyrefs
       end)
 
@@ -352,9 +347,7 @@ defmodule Mutex do
     |> Map.get(key, [])
     |> notify_waiters(key)
 
-    new_waiters =
-      state.waiters
-      |> Map.drop([key])
+    new_waiters = Map.delete(state.waiters, key)
 
     %S{state | locks: new_locks, owns: new_owns, waiters: new_waiters}
   end
@@ -365,32 +358,24 @@ defmodule Mutex do
       |> Map.get(pid, [])
       |> Enum.unzip()
 
-    if length(keys) > 0 do
-      # Logger.debug "RELEASE ALL (#{type}) #{inspect keys}"
-    end
+    # if length(keys) > 0 do
+    #   Logger.debug("RELEASE ALL (#{type}) #{inspect(keys)}")
+    # end
 
-    new_locks =
-      locks
-      |> Map.drop(keys)
+    new_locks = Map.drop(locks, keys)
 
     # sure that monitors are cleaned up ?
-    if(type !== :DOWN,
-      do: Enum.each(refs, &Process.demonitor/1)
-    )
+    if type !== :DOWN do
+      Enum.each(refs, &Process.demonitor(&1, [:flush]))
+    end
 
-    state.waiters
-    |> Map.take(keys)
-    |> Enum.map(fn {key, froms} ->
+    {notifiables, new_waiters} = Map.split(state.waiters, keys)
+
+    Enum.map(notifiables, fn {key, froms} ->
       notify_waiters(froms, key)
     end)
 
-    new_waiters =
-      state.waiters
-      |> Map.drop(keys)
-
-    new_owns =
-      owns
-      |> Map.drop([pid])
+    new_owns = Map.delete(owns, pid)
 
     %S{state | locks: new_locks, owns: new_owns, waiters: new_waiters}
   end

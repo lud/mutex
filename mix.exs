@@ -8,8 +8,8 @@ defmodule Mutex.Mixfile do
       This package implements a simple mutex as a GenServer. It allows to await
       locked keys and handles locking multiple keys without deadlocks.
       """,
-      version: "1.0.2",
-      elixir: "~> 1.4",
+      version: "1.1.0",
+      elixir: "~> 1.5",
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -29,7 +29,7 @@ defmodule Mutex.Mixfile do
 
   defp deps do
     [
-      {:ex_doc, "~> 0.14", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.19", only: :dev, runtime: false},
       {:dogma, "~> 0.1.15", only: :dev},
       {:dialyxir, "~> 0.4", only: :dev, runtime: false}
     ]
@@ -38,8 +38,8 @@ defmodule Mutex.Mixfile do
   defp package() do
     [
       licenses: ["MIT"],
-      maintainers: ["niahoo osef <dev@ooha.in>"],
-      links: %{"Github" => "https://github.com/niahoo/mutex"}
+      maintainers: ["Ludovic Demblans <ludovic@demblans.com>"],
+      links: %{"Github" => "https://github.com/lud/mutex"}
     ]
   end
 end
