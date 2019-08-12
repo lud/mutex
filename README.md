@@ -124,6 +124,7 @@ end
 
 A multilock version is also available with `Mutex.under_all/3`.
 
+Both functions can accept a fun of arity `1` that will be passed the lock.
 
 ## Avoiding Deadlocks
 
@@ -173,4 +174,4 @@ lock.meta === :some_data
 Mutex.Lock.get_meta(lock) === :some_data
 ```
 
-The lock will also be passed to a fun if its arity is `1` when using `Mutex.under/4` and `Mutex.under_all/3`. The arity of the fun can also be `0`. Releasing the lock within the fun is still useless as it will be automatically release as for 0-arity funs, and could give other processes the ability to lock the keys before the fun execution is complete.
+The lock will also be passed to a fun if its arity is `1` when using `Mutex.under/4` and `Mutex.under_all/3`. The arity of the fun can also be `0`. Releasing the lock within the fun is still useless as it will be automatically released as for 0-arity funs, and could give other processes the ability to lock the keys before the fun execution is complete.
