@@ -266,11 +266,9 @@ defmodule Mutex do
       e ->
         stacktrace = System.stacktrace()
         release(mutex, lock)
-        Logger.error("Exception within lock: #{inspect(e)}")
         reraise(e, stacktrace)
     catch
       :throw, term ->
-        Logger.error("Thrown within lock: #{inspect(term)}")
         release(mutex, lock)
         throw(term)
     end
