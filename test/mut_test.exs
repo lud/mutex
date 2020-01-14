@@ -387,14 +387,25 @@ defmodule MutexTest do
     assert {:ok, _} = Mutex.lock(pid, :mess_with_me)
   end
 
+  test "Many many processes" do
+    {:ok, pid} = Mutex.start_link()
+    iterations = 10000
+
+    [
+      Task.async(fn -> under_loop(pid, :my_key, iterations) end),
+      Task.async(fn -> under_loop(pid, :my_key, iterations) end),
+      Task.async(fn -> under_loop(pid, :my_key, iterations) end),
+      Task.async(fn -> under_loop(pid, :my_key, iterations) end)
+    ]
+    |> Enum.map(&Task.await(&1, :infinity))
+  end
+
   # -- helpers --------------------------------------------------------------
 
   # spawns a process that loop forever and locks <key> for <tin> time, release,
   # wait for <tout> time and start over
   def spawn_locker(mutex, key, tin \\ 200, tout \\ 150) do
-    spawn(fn ->
-      locker_loop(mutex, key, tin, tout)
-    end)
+    spawn(fn -> locker_loop(mutex, key, tin, tout) end)
   end
 
   def locker_loop(mutex, key, tin, tout) do
@@ -403,6 +414,17 @@ defmodule MutexTest do
     :ok = Mutex.release(mutex, lock)
     Process.sleep(tout)
     locker_loop(mutex, key, tin, tout)
+  end
+
+  def under_loop(mutex, key, 0),
+    do: :ok
+
+  def under_loop(mutex, key, iterations) when iterations > 0 do
+    Mutex.under(mutex, key, fn ->
+      _dummy_calculation = 1234 * 1235
+    end)
+
+    under_loop(mutex, key, iterations - 1)
   end
 
   def setup_test_file(filename) do
