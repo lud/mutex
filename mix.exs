@@ -29,7 +29,7 @@ defmodule Mutex.Mixfile do
 
   defp deps do
     [
-      {:ex_doc, "~> 0.19", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.21", only: :dev, runtime: false},
       {:dogma, "~> 0.1.15", only: :dev},
       {:dialyxir, "~> 0.4", only: :dev, runtime: false}
     ]
