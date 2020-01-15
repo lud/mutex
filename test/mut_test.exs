@@ -400,6 +400,15 @@ defmodule MutexTest do
     |> Enum.map(&Task.await(&1, :infinity))
   end
 
+  test "under and under_all return values" do
+    {:ok, pid} = Mutex.start_link()
+
+    assert :some_val = Mutex.under(pid, :my_key, fn -> :some_val end)
+    assert :some_val = Mutex.under(pid, :my_key, fn _lock -> :some_val end)
+    assert :some_val = Mutex.under_all(pid, [:my_key, :my_other], fn -> :some_val end)
+    assert :some_val = Mutex.under_all(pid, [:my_key, :my_other], fn _lock -> :some_val end)
+  end
+
   # -- helpers --------------------------------------------------------------
 
   # spawns a process that loop forever and locks <key> for <tin> time, release,
