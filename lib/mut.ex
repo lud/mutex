@@ -258,20 +258,9 @@ defmodule Mutex do
   end
 
   defp apply_with_lock(mutex, lock, fun) do
-    try do
-      result = fun.(lock)
-      release(mutex, lock)
-      result
-    rescue
-      e ->
-        stacktrace = __STACKTRACE__
-        release(mutex, lock)
-        reraise(e, stacktrace)
-    catch
-      :throw, term ->
-        release(mutex, lock)
-        throw(term)
-    end
+    fun.(lock)
+  after
+    release(mutex, lock)
   end
 
   # -- Server Callbacks -------------------------------------------------------

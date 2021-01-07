@@ -172,7 +172,7 @@ defmodule MutexTest do
     assert "1" = File.read!(filename)
   end
 
-  test "Mutexex Concurrency" do
+  test "Mutex Concurrency" do
     filename = "test/tmp/good-file.txt"
     setup_test_file(filename)
 
