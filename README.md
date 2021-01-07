@@ -8,7 +8,7 @@ This package can be installed by adding `mutex` to your list of dependencies in 
 
 ```elixir
 def deps do
-  [{:mutex, "~> 1.1.0"}]
+  [{:mutex, "~> 1.3"}]
 end
 ```
 
