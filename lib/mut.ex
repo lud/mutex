@@ -334,7 +334,6 @@ defmodule Mutex do
   end
 
   def handle_info(_info = {:DOWN, _ref, :process, pid, _}, state) do
-    Logger.debug("got DOWN")
     {:noreply, clear_owner(state, pid, :DOWN)}
   end
 
