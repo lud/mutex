@@ -272,6 +272,23 @@ defmodule MutexTest do
     assert %Lock{} = Mutex.await(@mut, :wrap1, 1000)
   end
 
+  test "if a fun exits within wrapper, the lock should be released" do
+    {ack, wack} = awack(:infinity)
+
+    spawn_hang(false, fn ->
+      # here we catch so the process does not exit, so the lock is not released
+      # because of an exit (false positive) but because the lib removes it
+      Mutex.under(@mut, :wrap2, :infinity, fn ->
+        ack.()
+        Logger.debug("exit from pid #{inspect(self())}")
+        exit(:fail)
+      end)
+    end)
+
+    wack.()
+    assert %Lock{} = Mutex.await(@mut, :wrap2, 1000)
+  end
+
   test "if a fun raises within wrapper with multilock it should be fine" do
     {ack, wack} = awack(:infinity)
     errmsg = "You failed me !"
@@ -295,7 +312,7 @@ defmodule MutexTest do
 
             e ->
               Logger.debug(
-                "Rescued unexcepted exception #{inspect(e)}\n#{inspect(System.stacktrace())}"
+                "Rescued unexcepted exception #{inspect(e)}\n#{inspect(__STACKTRACE__)}"
               )
 
               :ok
@@ -361,13 +378,11 @@ defmodule MutexTest do
     # Callbacks with 1 arity
 
     Mutex.under(pid, :fun1, fn lock ->
-      IO.inspect(lock, pretty: true, label: :lock)
       assert lock.meta === :passed
       assert {:error, :busy} === Mutex.lock(pid, :fun1)
     end)
 
     Mutex.under_all(pid, [:fun1], fn lock ->
-      IO.inspect(lock, pretty: true, label: :lock)
       assert lock.meta === :passed
       assert {:error, :busy} === Mutex.lock(pid, :fun1)
     end)
@@ -425,7 +440,7 @@ defmodule MutexTest do
     locker_loop(mutex, key, tin, tout)
   end
 
-  def under_loop(mutex, key, 0),
+  def under_loop(_mutex, _key, 0),
     do: :ok
 
   def under_loop(mutex, key, iterations) when iterations > 0 do
@@ -471,16 +486,22 @@ defmodule MutexTest do
     {ack, wack}
   end
 
-  def spawn_hang(fun) do
-    spawn_link(fn ->
+  def spawn_hang(link? \\ true, fun) do
+    executor = fn ->
       fun.()
       hang()
-    end)
+    end
+
+    if link? do
+      spawn_link(executor)
+    else
+      spawn(executor)
+    end
   end
 
   def hang do
     receive do
-      :stop -> Logger.debug("Hangin stops")
+      :stop -> Logger.debug("Hanging stops")
     end
   end
 
