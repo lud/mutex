@@ -276,8 +276,6 @@ defmodule MutexTest do
     {ack, wack} = awack(:infinity)
 
     spawn_hang(false, fn ->
-      # here we catch so the process does not exit, so the lock is not released
-      # because of an exit (false positive) but because the lib removes it
       Mutex.under(@mut, :wrap2, :infinity, fn ->
         ack.()
         Logger.debug("exit from pid #{inspect(self())}")
