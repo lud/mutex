@@ -1,14 +1,22 @@
 # A simple mutex for Elixir.
 
+[![Module Version](https://img.shields.io/hexpm/v/mutex.svg)](https://hex.pm/packages/mutex)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/mutex/)
+[![Total Download](https://img.shields.io/hexpm/dt/mutex.svg)](https://hex.pm/packages/mutex)
+[![License](https://img.shields.io/hexpm/l/mutex.svg)](https://github.com/lud/mutex/blob/master/LICENSE.md)
+[![Last Updated](https://img.shields.io/github/last-commit/lud/mutex.svg)](https://github.com/lud/mutex/commits/master)
+
 `Mutex` is a simple mutex module that fits under your supervision tree and allows processes to work on shared ressources one by one. This can be a simple alternative to database transactions. Also, `Mutex` supports multiple keys locking without deadlocks.
 
 ## Installation
 
-This package can be installed by adding `mutex` to your list of dependencies in `mix.exs`:
+This package can be installed by adding `:mutex` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
-  [{:mutex, "~> 1.3"}]
+  [
+    {:mutex, "~> 1.3"}
+  ]
 end
 ```
 
@@ -175,3 +183,10 @@ Mutex.Lock.get_meta(lock) === :some_data
 ```
 
 The lock will also be passed to a fun if its arity is `1` when using `Mutex.under/4` and `Mutex.under_all/3`. The arity of the fun can also be `0`. Releasing the lock within the fun is still useless as it will be automatically released as for 0-arity funs, and could give other processes the ability to lock the keys before the fun execution is complete.
+
+## Copyright and License
+
+Copyright (c) 2017 Niahoo Osef
+
+This work is free. You can redistribute it and/or modify it under the
+terms of the MIT License. See the [LICENSE.md](./LICENSE.md) file for more details.
