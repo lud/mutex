@@ -304,7 +304,7 @@ defmodule Mutex do
         {:noreply, rm_lock(state, key, pid)}
 
       {:ok, other_pid} ->
-        Logger.error("Could not release #{key}, bad owner",
+        Logger.error("Could not release #{inspect key}, bad owner",
           key: key,
           owner: other_pid,
           attempt: pid
@@ -313,7 +313,7 @@ defmodule Mutex do
         {:noreply, state}
 
       :error ->
-        Logger.error("Could not release #{key}, not found", key: key, attempt: pid)
+        Logger.error("Could not release #{inspect key}, not found", key: key, attempt: pid)
         {:noreply, state}
     end
   end
