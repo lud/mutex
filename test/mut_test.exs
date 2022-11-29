@@ -422,6 +422,46 @@ defmodule MutexTest do
     assert :some_val = Mutex.under_all(pid, [:my_key, :my_other], fn _lock -> :some_val end)
   end
 
+  test "error logger can log unknown compound keys on release" do
+    {:ok, pid} = Mutex.start_link()
+    {ack, wack} = vawack()
+
+    key = [{:t1, %{"compound" => 'key'}}, {}, %{}, "hello", pid]
+
+    spawn_link(fn ->
+      lock = Mutex.lock!(pid, key)
+      Mutex.release(pid, lock)
+      ack.(lock)
+    end)
+
+    lock = wack.()
+
+    assert :ok = Mutex.release(pid, lock)
+
+    GenServer.stop(pid)
+  end
+
+  test "error logger can log un-owned compound keys on release" do
+    {:ok, pid} = Mutex.start_link()
+    {ack, wack} = vawack()
+
+    key = [{:t1, %{"compound" => 'key'}}, {}, %{}, "hello", pid]
+
+    friend =
+      spawn_link(fn ->
+        lock = Mutex.lock!(pid, key)
+        ack.(lock)
+        hang()
+      end)
+
+    lock = wack.()
+
+    assert :ok = Mutex.release(pid, lock)
+
+    send(friend, :stop)
+    GenServer.stop(pid)
+  end
+
   # -- helpers --------------------------------------------------------------
 
   # spawns a process that loop forever and locks <key> for <tin> time, release,
@@ -476,6 +516,25 @@ defmodule MutexTest do
     wack = fn ->
       receive do
         ^ref -> :ok
+      after
+        timeout -> exit(:timeout)
+      end
+    end
+
+    {ack, wack}
+  end
+
+  def vawack(timeout \\ 5000) do
+    this = self()
+    ref = make_ref()
+
+    ack = fn value ->
+      send(this, {ref, value})
+    end
+
+    wack = fn ->
+      receive do
+        {^ref, value} -> value
       after
         timeout -> exit(:timeout)
       end
