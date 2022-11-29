@@ -426,7 +426,7 @@ defmodule MutexTest do
     {:ok, pid} = Mutex.start_link()
     {ack, wack} = vawack()
 
-    key = {:some, %{"compound" => 'key'}}
+    key = [{:t1, %{"compound" => 'key'}}, {}, %{}, "hello", pid]
 
     spawn_link(fn ->
       lock = Mutex.lock!(pid, key)
@@ -445,7 +445,7 @@ defmodule MutexTest do
     {:ok, pid} = Mutex.start_link()
     {ack, wack} = vawack()
 
-    key = {:some, %{"compound" => 'key'}}
+    key = [{:t1, %{"compound" => 'key'}}, {}, %{}, "hello", pid]
 
     friend =
       spawn_link(fn ->
@@ -458,8 +458,8 @@ defmodule MutexTest do
 
     assert :ok = Mutex.release(pid, lock)
 
-    GenServer.stop(pid)
     send(friend, :stop)
+    GenServer.stop(pid)
   end
 
   # -- helpers --------------------------------------------------------------
