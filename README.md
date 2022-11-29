@@ -1,16 +1,25 @@
-# A simple mutex for Elixir.
+# A simple mutex for Elixir
+
+[![Module Version](https://img.shields.io/hexpm/v/mutex.svg)](https://hex.pm/packages/mutex)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/mutex/)
+[![License](https://img.shields.io/hexpm/l/mutex.svg)](https://github.com/lud/mutex/blob/master/LICENSE.md)
+[![Last Updated](https://img.shields.io/github/last-commit/lud/mutex.svg)](https://github.com/lud/mutex/commits/master)
 
 `Mutex` is a simple mutex module that fits under your supervision tree and allows processes to work on shared ressources one by one. This can be a simple alternative to database transactions. Also, `Mutex` supports multiple keys locking without deadlocks.
 
+
 ## Installation
 
-This package can be installed by adding `mutex` to your list of dependencies in `mix.exs`:
+This package can be installed by adding `:mutex` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
-  [{:mutex, "~> 1.3"}]
+  [
+    {:mutex, "~> 1.3"},
+  ]
 end
 ```
+
 
 ## Using Mutex
 
@@ -87,6 +96,7 @@ spawn(fn -> update_user.("worker 6") end)
 # [worker 6] Saving user in database.
 ```
 
+
 ## Error Handling
 
 Whenever a process that locked a key on the mutex crashes, the mutex
@@ -126,22 +136,25 @@ A multilock version is also available with `Mutex.under_all/3`.
 
 Both functions can accept a fun of arity `1` that will be passed the lock.
 
+
 ## Avoiding Deadlocks
 
 A deadlock would occur if the keys were locked one by one with a race condition :
 
-    # Do not do this
+```elixir
+  # Do not do this
 
-    def handle_order(buyer, seller) do
-      lock1 = Mutex.await(MyMutex, buyer)
-      lock2 = Mutex.await(MyMutex, seller)
-      do_some_work_with_users(buyer, seller)
-      Mutex.release(MyMutex, lock1)
-      Mutex.release(MyMutex, lock2)
-    end
+  def handle_order(buyer, seller) do
+    lock1 = Mutex.await(MyMutex, buyer)
+    lock2 = Mutex.await(MyMutex, seller)
+    do_some_work_with_users(buyer, seller)
+    Mutex.release(MyMutex, lock1)
+    Mutex.release(MyMutex, lock2)
+  end
 
-    spawn(fn -> handler_order(:user_1, :user_2) end) # Process 1
-    spawn(fn -> handler_order(:user_2, :user_1) end) # Process 2
+  spawn(fn -> handler_order(:user_1, :user_2) end) # Process 1
+  spawn(fn -> handler_order(:user_2, :user_1) end) # Process 2
+```
 
 Process 1 will first lock `:user_1` and process 2 will lock `:user_2`, and then each process is waiting for the key that is already locked by the other one.
 
@@ -149,15 +162,18 @@ Process 1 will first lock `:user_1` and process 2 will lock `:user_2`, and then 
 
 This simple rule is mandatory and sufficient to be free from deadlocks, and `Mutex.await_all/2` is the simplest way to respect that rule.
 
-    # Do this instead
+```elixir
+# Do this instead
 
-    def handle_order(buyer, seller) do
-      lock = Mutex.await_all(MyMutex, [buyer, seller])
-      do_some_work_with_users(buyer, seller)
-      Mutex.release(MyMutex, lock)
-    end
+def handle_order(buyer, seller) do
+  lock = Mutex.await_all(MyMutex, [buyer, seller])
+  do_some_work_with_users(buyer, seller)
+  Mutex.release(MyMutex, lock)
+end
+```
 
 If you really have to lock keys in a loop, or in mutiple moments, the `Mutex.goodbye/1` function allows to simply release all the keys locked by the calling process in one call.
+
 
 ## Metadata
 
@@ -167,7 +183,7 @@ Metadata can be fetched at anytime with `Mutex.get_meta/1`.
 
 The metadata is also sent to any client that locks a key or a group of keys:
 
-```
+```elixir
 {:ok, pid} = Mutex.start_link(meta: :some_data)
 {:ok, lock} = Mutex.lock(pid, :some_key)
 lock.meta === :some_data
@@ -175,3 +191,11 @@ Mutex.Lock.get_meta(lock) === :some_data
 ```
 
 The lock will also be passed to a fun if its arity is `1` when using `Mutex.under/4` and `Mutex.under_all/3`. The arity of the fun can also be `0`. Releasing the lock within the fun is still useless as it will be automatically released as for 0-arity funs, and could give other processes the ability to lock the keys before the fun execution is complete.
+
+
+## Copyright and License
+
+Copyright (c) 2017, Ludovic Demblans
+
+This work is free. You can redistribute it and/or modify it under the
+terms of the MIT License. See the [LICENSE.md](./LICENSE.md) file for more details.
