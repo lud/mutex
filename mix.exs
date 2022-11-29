@@ -8,10 +8,6 @@ defmodule Mutex.Mixfile do
     [
       app: :mutex,
       version: @version,
-      description: """
-      This package implements a simple mutex as a GenServer. It allows to await
-      locked keys and handles locking multiple keys without deadlocks.
-      """,
       elixir: "~> 1.7",
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
