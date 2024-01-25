@@ -1,7 +1,7 @@
 defmodule Mutex do
+  alias Mutex.Lock
   require Logger
   use GenServer
-  alias Mutex.Lock
 
   @typedoc "The name of a mutex is an atom, registered with `Process.register/2`"
   @type name :: atom
@@ -225,7 +225,7 @@ defmodule Mutex do
           mutex :: name,
           key :: key,
           timeout :: timeout,
-          fun :: (() -> any) | (Lock.t() -> any)
+          fun :: (-> any) | (Lock.t() -> any)
         ) :: any
   def under(mutex, key, timeout \\ :infinity, fun)
 
@@ -248,7 +248,7 @@ defmodule Mutex do
   Otherwise the arity must be 0. You should not manually release the
   lock within the function.
   """
-  @spec under_all(mutex :: name, keys :: [key], fun :: (() -> any) | (Lock.t() -> any)) :: any
+  @spec under_all(mutex :: name, keys :: [key], fun :: (-> any) | (Lock.t() -> any)) :: any
   def under_all(mutex, keys, fun) when is_function(fun, 0),
     do: under_all(mutex, keys, fn _ -> fun.() end)
 
@@ -304,7 +304,7 @@ defmodule Mutex do
         {:noreply, rm_lock(state, key, pid)}
 
       {:ok, other_pid} ->
-        Logger.error("Could not release #{inspect key}, bad owner",
+        Logger.error("Could not release #{inspect(key)}, bad owner",
           key: key,
           owner: other_pid,
           attempt: pid
@@ -313,7 +313,7 @@ defmodule Mutex do
         {:noreply, state}
 
       :error ->
-        Logger.error("Could not release #{inspect key}, not found", key: key, attempt: pid)
+        Logger.error("Could not release #{inspect(key)}, not found", key: key, attempt: pid)
         {:noreply, state}
     end
   end
@@ -332,7 +332,7 @@ defmodule Mutex do
   end
 
   def handle_info(info, state) do
-    Logger.warn("Mutex received unexpected info : #{inspect(info)}")
+    Logger.warning("Mutex received unexpected info : #{inspect(info)}")
     {:noreply, state}
   end
 
