@@ -7,8 +7,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        otp: ["25"]
-        elixir: ["1.14.2"]
+        otp: ["26", "27"]
+        elixir: ["1.16", "1.17"]
+        exclude:
+          - otp: "27"
+          - elixir: "1.16"
     steps:
       - uses: actions/checkout@v2
       - uses: erlef/setup-beam@v1
