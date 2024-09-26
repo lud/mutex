@@ -395,9 +395,7 @@ defmodule Mutex do
 
     {notifiables, new_waiters} = Map.split(state.waiters, keys)
 
-    Enum.map(notifiables, fn {key, froms} ->
-      notify_waiters(froms, key)
-    end)
+    Enum.each(notifiables, fn {key, froms} -> notify_waiters(froms, key) end)
 
     new_owns = Map.delete(owns, pid)
 
