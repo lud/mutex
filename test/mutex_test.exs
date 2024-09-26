@@ -6,7 +6,7 @@ defmodule MutexTest do
 
   doctest Mutex
 
-  # @moduletag :capture_log
+  @moduletag :capture_log
   @mut rand_mod()
 
   setup do

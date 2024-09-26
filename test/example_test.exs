@@ -3,7 +3,7 @@ defmodule Mutex.ExampleTest do
   require Logger
   use ExUnit.Case, async: true
 
-  # @moduletag :capture_log
+  @moduletag :capture_log
   @mut rand_mod()
 
   setup do
