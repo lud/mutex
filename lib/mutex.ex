@@ -1,23 +1,9 @@
 defmodule Mutex do
   alias Mutex.Lock
+  alias Mutex.LockError
   import Kernel, except: [send: 2]
   require Logger
   use GenServer
-
-  defmodule LockError do
-    @moduledoc false
-    defexception [:key]
-
-    def message(%{key: key}) do
-      "key #{inspect(key)} is already locked"
-    end
-  end
-
-  @typedoc "The name of a mutex is an atom, registered with `Process.register/2`"
-  @type name :: atom
-
-  @typedoc "A key can be any term."
-  @type key :: any
 
   @moduledoc """
   This is the main module in this application, it implements a mutex as a
@@ -26,36 +12,47 @@ defmodule Mutex do
   See [`README.md`](https://hexdocs.pm/mutex/readme.html) for how to use.
   """
 
+  @default_cleanup_interval 10_000
+
+  @typedoc "The name of a mutex is an atom, registered with `Process.register/2`"
+  @type name :: atom
+
+  @typedoc "A key can be any term."
+  @type key :: any
+
   @doc """
   Starts a mutex with no process linking. Given options are passed as options
   for a `GenServer`, it's a good place to set the name for registering the
   process.
 
-  See [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
+  See `start_link/1` for options.
   """
   @spec start(opts :: Keyword.t()) :: GenServer.on_start()
-  def start(opts \\ []) do
+  def start(opts \\ []) when is_list(opts) do
     {gen_opts, opts} = get_opts(opts)
     GenServer.start(__MODULE__, opts, gen_opts)
   end
 
   @doc """
-  Starts a mutex with linking under a supervision tree. Given options are passed
-  as options for a `GenServer`, it's a good place to set the name for
-  registering the process.
+  Starts a mutex linked to the calling process.
 
-  See [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
+  ## Options
+
+  * `:cleanup_interval` - Milliseconds before the mutex process will clean it's
+    state after locks have been released. Use short time for heavily used
+    mutexes. Defaults to `#{inspect(@default_cleanup_interval)}`.
+  * Supports all `t:GenServer.options()`
+
+  See [`GenServer`
+  options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
   """
   @spec start_link(opts :: Keyword.t()) :: GenServer.on_start()
-  def start_link(opts \\ []) do
+  def start_link(opts \\ []) when is_list(opts) do
     {gen_opts, opts} = get_opts(opts)
     GenServer.start_link(__MODULE__, opts, gen_opts)
   end
 
   @gen_opts [:debug, :name, :timeout, :spawn_opt, :hibernate_after]
-
-  defp get_opts(opts) when is_atom(opts),
-    do: get_opts(name: opts)
 
   defp get_opts(opts) do
     opts
@@ -312,7 +309,8 @@ defmodule Mutex do
 
   @impl true
   def init(opts) do
-    Kernel.send(self(), {:cleanup, opts[:cleanup_interval]})
+    Process.send_after(self(), {:cleanup, opts[:cleanup_interval]}, opts[:cleanup_interval])
+
     {:ok, %S{}}
   end
 
@@ -454,19 +452,6 @@ defmodule Mutex do
     %S{state | waiters: new_waiters}
   end
 
-  defp cleanup(state = %S{owns: owns}) do
-    # remove empty owns
-    new_owns =
-      owns
-      |> Enum.filter(fn
-        {_pid, []} -> false
-        _ -> true
-      end)
-      |> Enum.into(%{})
-
-    %S{state | owns: new_owns}
-  end
-
   defp notify_waiters([], _) do
     :ok
   end
@@ -485,5 +470,16 @@ defmodule Mutex do
     end)
 
     :ok
+  end
+
+  defp cleanup(state) do
+    # remove empty owns
+    new_owns =
+      Map.filter(state.owns, fn
+        {_, []} -> false
+        _ -> true
+      end)
+
+    %S{state | owns: new_owns}
   end
 end

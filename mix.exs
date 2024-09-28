@@ -48,8 +48,8 @@ defmodule Mutex.Mixfile do
   defp docs do
     [
       extras: [
-        "LICENSE.md": [title: "License"],
-        "README.md": [title: "Overview"]
+        "README.md": [title: "Overview"],
+        "LICENSE.md": [title: "License"]
       ],
       main: "readme",
       source_url: @source_url,

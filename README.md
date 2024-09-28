@@ -3,11 +3,12 @@
 [![Module Version](https://img.shields.io/hexpm/v/mutex.svg)](https://hex.pm/packages/mutex)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/mutex/)
 [![License](https://img.shields.io/hexpm/l/mutex.svg)](https://github.com/lud/mutex/blob/master/LICENSE.md)
-[![Last Updated](https://img.shields.io/github/last-commit/lud/mutex.svg)](https://github.com/lud/mutex/commits/master)
+[![Last Updated](https://img.shields.io/github/last-commit/lud/mutex.svg)](https://github.com/lud/mutex/commits/main)
 
 `Mutex` is a simple mutex module that fits under your supervision tree and allows processes to work on shared ressources one by one. This can be a simple alternative to database transactions. Also, `Mutex` supports multiple keys locking without deadlocks.
 
 
+- [Documentation](#documentation)
 - [Installation](#installation)
 - [Using Mutex](#using-mutex)
 - [Error Handling](#error-handling)
@@ -17,6 +18,11 @@
 - [Copyright and License](#copyright-and-license)
 
 
+## [Documentation](https://hexdocs.pm/mutex/)
+
+The documentation is hosted on Hexdocs.
+
+
 ## Installation
 
 This package can be installed by adding `:mutex` to your list of dependencies in `mix.exs`:
@@ -24,7 +30,7 @@ This package can be installed by adding `:mutex` to your list of dependencies in
 ```elixir
 def deps do
   [
-    {:mutex, "~> 1.3"},
+    {:mutex, "~> 3.0"},
   ]
 end
 ```
@@ -34,7 +40,7 @@ end
 
 A mutex is handled by a process that you start in your supervision tree with [`child_spec(name)`](https://hexdocs.pm/mutex/Mutex.html#child_spec/1).
 
-Options can be an atom (used as the `GenServer` name), or a `Keyword` with [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
+See `Mutex.start_link/1` for options.
 
 ```elixir
 children = [
