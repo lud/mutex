@@ -11,8 +11,7 @@ defmodule Mutex do
 
   See [`README.md`](https://hexdocs.pm/mutex/readme.html) for how to use.
   """
-
-  @default_cleanup_interval 10_000
+  @gen_opts [:debug, :name, :timeout, :spawn_opt, :hibernate_after]
 
   @typedoc "The name of a mutex is an atom, registered with `Process.register/2`"
   @type name :: atom
@@ -29,35 +28,22 @@ defmodule Mutex do
   """
   @spec start(opts :: Keyword.t()) :: GenServer.on_start()
   def start(opts \\ []) when is_list(opts) do
-    {gen_opts, opts} = get_opts(opts)
+    {gen_opts, opts} = Keyword.split(opts, @gen_opts)
     GenServer.start(__MODULE__, opts, gen_opts)
   end
 
   @doc """
   Starts a mutex linked to the calling process.
 
-  ## Options
-
-  * `:cleanup_interval` - Milliseconds before the mutex process will clean it's
-    state after locks have been released. Use short time for heavily used
-    mutexes. Defaults to `#{inspect(@default_cleanup_interval)}`.
-  * Supports all `t:GenServer.options()`
+  Accepts only `t:GenServer.options()`.
 
   See [`GenServer`
   options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
   """
   @spec start_link(opts :: Keyword.t()) :: GenServer.on_start()
   def start_link(opts \\ []) when is_list(opts) do
-    {gen_opts, opts} = get_opts(opts)
+    {gen_opts, opts} = Keyword.split(opts, @gen_opts)
     GenServer.start_link(__MODULE__, opts, gen_opts)
-  end
-
-  @gen_opts [:debug, :name, :timeout, :spawn_opt, :hibernate_after]
-
-  defp get_opts(opts) do
-    opts
-    |> Keyword.put_new(:cleanup_interval, 1000)
-    |> Keyword.split(@gen_opts)
   end
 
   @doc """
@@ -309,13 +295,17 @@ defmodule Mutex do
 
   @impl true
   def init(opts) do
-    Process.send_after(self(), {:cleanup, opts[:cleanup_interval]}, opts[:cleanup_interval])
+    _opts = Enum.flat_map(opts, &validate_opt/1)
 
     {:ok, %S{}}
   end
 
-  @impl true
+  defp validate_opt(opt) do
+    Logger.warning("Unknown option #{inspect(opt)} given to #{inspect(__MODULE__)}")
+    []
+  end
 
+  @impl true
   def handle_call({:lock, key, pid, wait?}, from, state) do
     case Map.fetch(state.locks, key) do
       {:ok, _owner} ->
@@ -342,26 +332,29 @@ defmodule Mutex do
 
   @impl true
   def handle_cast({:release, key, pid}, state) do
-    case Map.fetch(state.locks, key) do
-      {:ok, ^pid} ->
-        {:noreply, rm_lock(state, key, pid)}
+    state =
+      case Map.fetch(state.locks, key) do
+        {:ok, ^pid} ->
+          rm_lock(state, key, pid)
 
-      {:ok, owner_pid} when pid == :"$force_release" ->
-        {:noreply, rm_lock(state, key, owner_pid)}
+        {:ok, owner_pid} when pid == :"$force_release" ->
+          rm_lock(state, key, owner_pid)
 
-      {:ok, other_pid} ->
-        Logger.error("Could not release #{inspect(key)}, bad owner",
-          key: key,
-          owner: other_pid,
-          attempt: pid
-        )
+        {:ok, other_pid} ->
+          Logger.error("Could not release #{inspect(key)}, bad owner",
+            key: key,
+            owner: other_pid,
+            attempt: pid
+          )
 
-        {:noreply, state}
+          state
 
-      :error ->
-        Logger.error("Could not release #{inspect(key)}, not found", key: key, attempt: pid)
-        {:noreply, state}
-    end
+        :error ->
+          Logger.error("Could not release #{inspect(key)}, not found", key: key, attempt: pid)
+          state
+      end
+
+    {:noreply, state}
   end
 
   def handle_cast({:goodbye, pid}, state) do
@@ -369,23 +362,13 @@ defmodule Mutex do
   end
 
   @impl true
-  def handle_info(_info = {:DOWN, _ref, :process, pid, _}, state) do
+  def handle_info({:DOWN, _ref, :process, pid, _}, state) do
     {:noreply, clear_owner(state, pid, :DOWN)}
-  end
-
-  def handle_info({:cleanup, interval}, state) do
-    Process.send_after(self(), {:cleanup, interval}, interval)
-    {:noreply, cleanup(state)}
-  end
-
-  def handle_info(info, state) do
-    Logger.warning("Mutex received unexpected info : #{inspect(info)}")
-    {:noreply, state}
   end
 
   # -- State ------------------------------------------------------------------
 
-  defp set_lock(state = %S{locks: locks, owns: owns}, key, pid) do
+  defp set_lock(%S{locks: locks, owns: owns} = state, key, pid) do
     # Logger.debug "LOCK #{inspect key}"
     new_locks = Map.put(locks, key, pid)
 
@@ -397,17 +380,22 @@ defmodule Mutex do
     %S{state | locks: new_locks, owns: new_owns}
   end
 
-  defp rm_lock(state = %S{locks: locks, owns: owns}, key, pid) do
+  defp rm_lock(%S{locks: locks, owns: owns} = state, key, pid) do
     # Logger.debug "RELEASE #{inspect key}"
     # pid must be the owner here. Checked in handle_cast
     new_locks = Map.delete(locks, key)
 
-    new_owns =
-      Map.update(owns, pid, [], fn keyrefs ->
-        {{_key, ref}, new_keyrefs} = List.keytake(keyrefs, key, 0)
-        Process.demonitor(ref, [:flush])
-        new_keyrefs
-      end)
+    {new_owns, mref} =
+      case owns do
+        %{^pid => [{^key, mref}]} ->
+          {Map.delete(owns, pid), mref}
+
+        %{^pid => keyrefs} ->
+          {{_key, mref}, new_keyrefs} = List.keytake(keyrefs, key, 0)
+          {Map.put(owns, pid, new_keyrefs), mref}
+      end
+
+    Process.demonitor(mref, [:flush])
 
     state.waiters
     |> Map.get(key, [])
@@ -418,19 +406,14 @@ defmodule Mutex do
     %S{state | locks: new_locks, owns: new_owns, waiters: new_waiters}
   end
 
-  defp clear_owner(state = %S{locks: locks, owns: owns}, pid, type) do
+  defp clear_owner(%S{locks: locks, owns: owns} = state, pid, type) do
     {keys, refs} =
       owns
       |> Map.get(pid, [])
       |> Enum.unzip()
 
-    # if length(keys) > 0 do
-    #   Logger.debug("RELEASE ALL (#{type}) #{inspect(keys)}")
-    # end
-
     new_locks = Map.drop(locks, keys)
 
-    # sure that monitors are cleaned up ?
     if type !== :DOWN do
       Enum.each(refs, &Process.demonitor(&1, [:flush]))
     end
@@ -444,7 +427,7 @@ defmodule Mutex do
     %S{state | locks: new_locks, owns: new_owns, waiters: new_waiters}
   end
 
-  defp set_waiter(state = %S{waiters: waiters}, key, from) do
+  defp set_waiter(%S{waiters: waiters} = state, key, from) do
     # Maybe we should monitor the waiter to not send useless message when the
     # key is available if the waiter is down ?
     new_waiters = Map.update(waiters, key, [from], fn waiters -> [from | waiters] end)
@@ -470,16 +453,5 @@ defmodule Mutex do
     end)
 
     :ok
-  end
-
-  defp cleanup(state) do
-    # remove empty owns
-    new_owns =
-      Map.filter(state.owns, fn
-        {_, []} -> false
-        _ -> true
-      end)
-
-    %S{state | owns: new_owns}
   end
 end
