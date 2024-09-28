@@ -11,7 +11,7 @@ defmodule MutexTest do
   @mut rand_mod()
 
   setup do
-    {:ok, _pid} = start_supervised({Mutex, name: @mut, meta: :test_mutex})
+    {:ok, _pid} = start_supervised({Mutex, name: @mut})
     :ok
   end
 
@@ -20,7 +20,7 @@ defmodule MutexTest do
   end
 
   test "can acquire lock" do
-    assert {:ok, %Lock{meta: :test_mutex}} = Mutex.lock(@mut, :some_key)
+    assert {:ok, %Lock{}} = Mutex.lock(@mut, :some_key)
   end
 
   test "cannot acquire twice" do
@@ -228,66 +228,6 @@ defmodule MutexTest do
 
     :ok = Mutex.release(@mut, %{lock | keys: [:other_1, :k2, :other_2, :k1, :other_3]})
     assert :ok = wack.()
-  end
-
-  test "mutex can hold metadata" do
-    # Direct call
-
-    {:ok, pid} = Mutex.start_link(meta: :some_data)
-    assert :some_data = Mutex.get_meta(pid)
-
-    # Simple value
-
-    {:ok, pid} = Mutex.start_link(meta: :some_data)
-    assert {:ok, lock} = Mutex.lock(pid, :some_key)
-    assert lock.meta === :some_data
-    assert Mutex.Lock.get_meta(lock) === :some_data
-    assert %{meta: :some_data} = Mutex.await(pid, :a_key)
-    assert %{meta: :some_data} = Mutex.await_all(pid, [:some_key_2, :other_key])
-
-    # Data structure
-
-    {:ok, pid} = Mutex.start_link(meta: %{some: [:nested, {:data, "structure"}]})
-    assert {:ok, lock} = Mutex.lock(pid, :some_key)
-    assert lock.meta === %{some: [:nested, {:data, "structure"}]}
-
-    # Callbacks with 0 arity
-
-    {:ok, pid} = Mutex.start_link(meta: :passed)
-
-    Mutex.under(pid, :fun0, fn ->
-      assert {:error, :busy} === Mutex.lock(pid, :fun0)
-    end)
-
-    Mutex.under_all(pid, [:fun0], fn ->
-      assert {:error, :busy} === Mutex.lock(pid, :fun0)
-    end)
-
-    # Callbacks with 1 arity
-
-    Mutex.under(pid, :fun1, fn lock ->
-      assert lock.meta === :passed
-      assert {:error, :busy} === Mutex.lock(pid, :fun1)
-    end)
-
-    Mutex.under_all(pid, [:fun1], fn lock ->
-      assert lock.meta === :passed
-      assert {:error, :busy} === Mutex.lock(pid, :fun1)
-    end)
-
-    # Releasing the lock in `under`
-
-    result =
-      Mutex.under(pid, :mess_with_me, fn lock ->
-        assert lock.meta === :passed
-        Mutex.release(pid, lock)
-        :the_result
-      end)
-
-    # It should sill work (just log an error)
-    assert result === :the_result
-
-    assert {:ok, _} = Mutex.lock(pid, :mess_with_me)
   end
 
   test "under and under_all return values" do

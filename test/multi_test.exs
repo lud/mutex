@@ -8,7 +8,7 @@ defmodule Mutex.MultiTest do
   @mut rand_mod()
 
   setup do
-    {:ok, _pid} = start_supervised({Mutex, name: @mut, meta: :test_mutex})
+    {:ok, _pid} = start_supervised({Mutex, name: @mut})
     :ok
   end
 

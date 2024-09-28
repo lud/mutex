@@ -8,7 +8,7 @@ defmodule Mutex.NameRegistrationTest do
   @mut rand_mod()
 
   setup do
-    pid = start_supervised!({Mutex, name: @mut, meta: :test_mutex})
+    pid = start_supervised!({Mutex, name: @mut})
     {:ok, mutex_pid: pid}
   end
 

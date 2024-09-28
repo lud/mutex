@@ -13,7 +13,7 @@
 - [Error Handling](#error-handling)
 - [Avoiding Deadlocks](#avoiding-deadlocks)
 - [Name registration](#name-registration)
-- [Metadata](#metadata)
+- [Metadata (Removed)](#metadata-removed)
 - [Copyright and License](#copyright-and-license)
 
 
@@ -34,11 +34,11 @@ end
 
 A mutex is handled by a process that you start in your supervision tree with [`child_spec(name)`](https://hexdocs.pm/mutex/Mutex.html#child_spec/1).
 
-Options can be an atom (used as the `GenServer` name), or a `Keyword` with [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0) and a `:meta` option to set the metadata.
+Options can be an atom (used as the `GenServer` name), or a `Keyword` with [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
 
 ```elixir
 children = [
-  {Mutex, name: MyMutex, meta: some_data}
+  {Mutex, name: MyMutex}
 ]
 {:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
 ```
@@ -236,22 +236,16 @@ performance.
 
 
 
-## Metadata
+## Metadata (Removed)
 
-A mutex can hold metadata that will be assigned to each lock. The metadata is set upon initialization (given as `:meta` in the child spec in your supervisor, or in the options for `Mutex.start` or `Mutex.start_link`).
+A `Mutex` process could carry metadata attached to it and would send it to any
+process acquiring a lock. This has been removed as it was confusing. Metadata
+was not tied to a given key but to the mutex itself.
 
-Metadata can be fetched at anytime with `Mutex.get_meta/1`.
+To replace this functionality, you may use a `Registry`, an ETS table,
+`:persistent_term` or other shared data mechanisms provided by the Elixir and
+Erlang platforms.
 
-The metadata is also sent to any client that locks a key or a group of keys:
-
-```elixir
-{:ok, pid} = Mutex.start_link(meta: :some_data)
-{:ok, lock} = Mutex.lock(pid, :some_key)
-lock.meta === :some_data
-Mutex.Lock.get_meta(lock) === :some_data
-```
-
-The lock will also be passed to a fun if its arity is `1` when using `Mutex.under/4` and `Mutex.under_all/3`. The arity of the fun can also be `0`. Releasing the lock within the fun is still useless as it will be automatically released as for 0-arity funs, and could give other processes the ability to lock the keys before the fun execution is complete.
 
 
 ## Copyright and License

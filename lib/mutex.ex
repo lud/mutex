@@ -5,6 +5,7 @@ defmodule Mutex do
   use GenServer
 
   defmodule LockError do
+    @moduledoc false
     defexception [:key]
 
     def message(%{key: key}) do
@@ -31,8 +32,6 @@ defmodule Mutex do
   process.
 
   See [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
-
-  A `:meta` key can also be given in options to set the mutex metadata.
   """
   @spec start(opts :: Keyword.t()) :: GenServer.on_start()
   def start(opts \\ []) do
@@ -46,8 +45,6 @@ defmodule Mutex do
   registering the process.
 
   See [`GenServer` options](https://hexdocs.pm/elixir/GenServer.html#t:options/0).
-
-  A `:meta` key can also be given in options to set the mutex metadata.
   """
   @spec start_link(opts :: Keyword.t()) :: GenServer.on_start()
   def start_link(opts \\ []) do
@@ -62,17 +59,8 @@ defmodule Mutex do
 
   defp get_opts(opts) do
     opts
-    |> Keyword.put_new(:meta, nil)
     |> Keyword.put_new(:cleanup_interval, 1000)
     |> Keyword.split(@gen_opts)
-  end
-
-  @doc """
-  Fetch the metadata of the mutex.
-  """
-  @spec get_meta(mutex :: name) :: any
-  def get_meta(mutex) do
-    GenServer.call(mutex, :get_meta)
   end
 
   @doc """
@@ -82,13 +70,12 @@ defmodule Mutex do
   @spec lock(name :: name, key :: key) :: {:ok, Lock.t()} | {:error, :busy}
   def lock(mutex, key) do
     case GenServer.call(mutex, {:lock, key, self(), false}) do
-      {:ok, meta} -> {:ok, key2lock(key, meta)}
-      err -> err
+      :ok -> {:ok, key2lock(key)}
+      {:error, :busy} -> {:error, :busy}
     end
   end
 
-  defp key2lock(key, meta),
-    do: %Lock{type: :single, key: key, meta: meta}
+  defp key2lock(key), do: %Lock{type: :single, key: key}
 
   @doc """
   Attemps to lock a resource on the mutex and returns immediately with the lock
@@ -128,7 +115,7 @@ defmodule Mutex do
   def await(mutex, key, :infinity) do
     case GenServer.call(mutex, {:lock, key, self(), true}, :infinity) do
       # lock acquired
-      {:ok, meta} -> key2lock(key, meta)
+      :ok -> key2lock(key)
       {:available, ^key} -> await(mutex, key, :infinity)
     end
   end
@@ -137,9 +124,8 @@ defmodule Mutex do
     now = System.system_time(:millisecond)
 
     case GenServer.call(mutex, {:lock, key, self(), true}, timeout) do
-      {:ok, meta} ->
-        # lock acquired
-        key2lock(key, meta)
+      :ok ->
+        key2lock(key)
 
       {:available, ^key} ->
         expires_at = now + timeout
@@ -170,10 +156,9 @@ defmodule Mutex do
   # the keys sorted. @optimize send all keys to the server and get {locked,
   # busies} as reply, then start over with the busy ones
 
-  # On the last key we extract the metadata
   defp await_sorted(mutex, [last | []], :infinity, locked_keys) do
-    %Lock{meta: meta} = await(mutex, last, :infinity)
-    keys2multilock([last | locked_keys], meta)
+    %Lock{} = await(mutex, last, :infinity)
+    keys2multilock([last | locked_keys])
   end
 
   defp await_sorted(mutex, [key | keys], :infinity, locked_keys) do
@@ -181,8 +166,8 @@ defmodule Mutex do
     await_sorted(mutex, keys, :infinity, [key | locked_keys])
   end
 
-  defp keys2multilock(keys, meta),
-    do: %Lock{type: :multi, keys: keys, meta: meta}
+  defp keys2multilock(keys),
+    do: %Lock{type: :multi, keys: keys}
 
   @doc """
   Tells the mutex to free the given lock and immediately returns `:ok` without
@@ -321,21 +306,17 @@ defmodule Mutex do
       owns: %{},
 
       # %{key => [gen_server.from()]}
-      waiters: %{},
-      meta: nil
+      waiters: %{}
     ]
   end
 
   @impl true
   def init(opts) do
     Kernel.send(self(), {:cleanup, opts[:cleanup_interval]})
-    {:ok, %S{meta: opts[:meta]}}
+    {:ok, %S{}}
   end
 
   @impl true
-  def handle_call(:get_meta, _from, state) do
-    {:reply, state.meta, state}
-  end
 
   def handle_call({:lock, key, pid, wait?}, from, state) do
     case Map.fetch(state.locks, key) do
@@ -347,7 +328,7 @@ defmodule Mutex do
         end
 
       :error ->
-        {:reply, {:ok, state.meta}, set_lock(state, key, pid)}
+        {:reply, :ok, set_lock(state, key, pid)}
     end
   end
 
