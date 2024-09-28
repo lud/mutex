@@ -29,6 +29,44 @@ defmodule Mutex.Test.Utils do
     {ack, wack}
   end
 
+  # synchronizes several processes on a label, that is, when a participant
+  # process calls the returned fun with a label, they'll block until all other
+  # participants called the same label.
+  def syncher(n_procs) when n_procs >= 2 do
+    parent = self()
+    n_clients = n_procs - 1
+    ref = make_ref()
+
+    fn key ->
+      case self() do
+        ^parent ->
+          syncher_parent_loop(n_clients, key, ref, %{})
+
+        from_pid ->
+          send(parent, {:ack, ref, key, from_pid})
+
+          receive do
+            {:continue, ^ref, ^key} -> :ok
+          after
+            5000 -> exit(:timeout)
+          end
+      end
+    end
+  end
+
+  defp syncher_parent_loop(n_clients, key, ref, others) when map_size(others) == n_clients do
+    others |> Map.keys() |> Enum.each(&send(&1, {:continue, ref, key}))
+  end
+
+  defp syncher_parent_loop(n_clients, key, ref, others) do
+    receive do
+      {:ack, ^ref, ^key, from_pid} ->
+        syncher_parent_loop(n_clients, key, ref, Map.put(others, from_pid, true))
+    after
+      5000 -> exit(:timeout)
+    end
+  end
+
   def spawn_hang(link? \\ true, fun) do
     executor = fn ->
       fun.()

@@ -11,7 +11,7 @@ jobs:
         elixir: ["1.16", "1.17"]
         exclude:
           - otp: "27"
-          - elixir: "1.16"
+            elixir: "1.16"
     steps:
       - uses: actions/checkout@v2
       - uses: erlef/setup-beam@v1
@@ -19,5 +19,6 @@ jobs:
           version-type: strict
           otp-version: ${{matrix.otp}}
           elixir-version: ${{matrix.elixir}}
-      - run: mix deps.get --only prod
+      - run: mix deps.get
+      - run: mkdir -p test/tmp
       - run: mix test

@@ -1,5 +1,6 @@
 defmodule MutexTest do
   alias Mutex.Lock
+  alias Mutex.LockError
   import Mutex.Test.Utils
   require Logger
   use ExUnit.Case, async: true
@@ -18,8 +19,13 @@ defmodule MutexTest do
     assert is_pid(Process.whereis(@mut))
   end
 
-  test "can acquire lock (can lock key)" do
+  test "can acquire lock" do
     assert {:ok, %Lock{meta: :test_mutex}} = Mutex.lock(@mut, :some_key)
+  end
+
+  test "cannot acquire twice" do
+    assert {:ok, %Lock{}} = Mutex.lock(@mut, :some_key)
+    assert {:error, :busy} = Mutex.lock(@mut, :some_key)
   end
 
   test "can't acquire locked key" do
@@ -34,6 +40,9 @@ defmodule MutexTest do
 
     wack.()
     assert {:error, :busy} = Mutex.lock(@mut, :key1)
+    err = catch_error(Mutex.lock!(@mut, :key1))
+    assert %LockError{key: :key1} = err
+    assert Exception.message(err) =~ "key1"
   end
 
   test "can wait for key is released when owner dies" do
@@ -177,6 +186,48 @@ defmodule MutexTest do
     assert %Lock{} = Mutex.await(@mut, :hello_1, 2000)
     assert %Lock{} = Mutex.await(@mut, :hello_2, 2000)
     assert %Lock{} = Mutex.await(@mut, :hello_3, 2000)
+  end
+
+  test "can't release a key if not owner" do
+    {ack, wack} = vawack()
+
+    tspawn(fn ->
+      lock = Mutex.lock!(@mut, :not_mine)
+      ack.(lock)
+      hang()
+    end)
+
+    lock = wack.()
+
+    # release is a gen:cast() so it always returns :ok
+
+    # cannot release a lock owned by someone else
+    assert :ok = Mutex.release(@mut, lock)
+    assert {:error, :busy} = Mutex.lock(@mut, :not_mine)
+  end
+
+  test "can't release a key if not owner or if not registered" do
+    # Cannot release an unknown key
+    assert :ok = Mutex.release(@mut, %Lock{type: :single, key: :unregistered_key})
+    assert {:ok, _} = Mutex.lock(@mut, :unregistered_key)
+  end
+
+  test "releasing unknown keys is fine" do
+    {ack, wack} = awack()
+
+    # * This process registers 2 keys. Then a concurrent process try to acquire
+    #   them.
+    # * The second process must be able to lock the same keys.
+    # * This process release those keys but with other inexistent keys.
+    lock = Mutex.await_all(@mut, [:k1, :k2])
+
+    tspawn(fn ->
+      Mutex.await_all(@mut, [:k2, :k1])
+      ack.()
+    end)
+
+    :ok = Mutex.release(@mut, %{lock | keys: [:other_1, :k2, :other_2, :k1, :other_3]})
+    assert :ok = wack.()
   end
 
   test "mutex can hold metadata" do

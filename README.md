@@ -8,6 +8,15 @@
 `Mutex` is a simple mutex module that fits under your supervision tree and allows processes to work on shared ressources one by one. This can be a simple alternative to database transactions. Also, `Mutex` supports multiple keys locking without deadlocks.
 
 
+- [Installation](#installation)
+- [Using Mutex](#using-mutex)
+- [Error Handling](#error-handling)
+- [Avoiding Deadlocks](#avoiding-deadlocks)
+- [Name registration](#name-registration)
+- [Metadata](#metadata)
+- [Copyright and License](#copyright-and-license)
+
+
 ## Installation
 
 This package can be installed by adding `:mutex` to your list of dependencies in `mix.exs`:
@@ -39,7 +48,7 @@ Let's see a bad example of concurrent code without database transactions.
 ```elixir
 resource_id = :some_user_id # unused in example
 update_user = fn(worker) ->
-  IO.puts "[#{worker}] Reading user from database."
+  imIO.puts "[#{worker}] Reading user from database."
   Process.sleep(250)
   IO.puts "[#{worker}] Working with user."
   Process.sleep(250)
@@ -57,7 +66,7 @@ spawn(fn -> update_user.("worker 3") end)
 # [worker 1] Working with user.
 # [worker 2] Working with user.
 # [worker 3] Working with user.
-# [worker 2] Saving user in database. # 2 before 1 !
+# [worker 2] Saving user in database. # order is not guaranteed either
 # [worker 1] Saving user in database.
 # [worker 3] Saving user in database.
 ```
@@ -173,6 +182,58 @@ end
 ```
 
 If you really have to lock keys in a loop, or in mutiple moments, the `Mutex.goodbye/1` function allows to simply release all the keys locked by the calling process in one call.
+
+
+## Name registration
+
+Processes having a key locked in a `Mutex` can be called using a `:via` tuple with `GenServer.call/3` or `GenServer.cast/2`.
+
+The `:via` tuple is built as follows:
+
+```elixir
+{
+  :via,
+  Mutex,
+  {<mutex_name_or_pid>, <key>}
+}
+```
+
+Example calling a `GenServer` process with such tuples:
+
+```elixir
+{:ok, _} = Mutex.start_link(name: MyMutex)
+
+defmodule MyGenServer do
+  def init(_), do: Mutex.lock(MyMutex, :some_key)
+  def handle_call(:greetings, _, state), do: {:reply, :hello, state}
+end
+
+{:ok, _} = GenServer.start_link(MyGenServer, [])
+:hello = GenServer.call({:via, Mutex, {MyMutex, :some_key}}, :greetings)
+```
+
+This lets you check if a key is currently locked in the Mutex:
+
+```
+# Returns #PID<…> or nil
+GenServer.whereis({:via, Mutex, {MyMutex, :some_key}})
+```
+
+As any other name registry, you can directly set the name of your process in `GenServer.start_link/3`:
+
+```elixir
+GenServer.start_link(MyGenServer, [], name: {:via, Mutex, {MyMutex, :some_key}})
+```
+
+In this case the lock is automatically taken by the `GenServer` process.
+
+**Important**, this mechanism is intended for use with mutexes handling a small
+amount of processes working together. Do not use name registration with a single
+mutex in you application or you could get bottlenecks. The
+[Registry](https://hexdocs.pm/elixir/Registry.html#module-using-in-via) module is intended for such
+uses and supports unique keys and partitionning registered keys for
+performance.
+
 
 
 ## Metadata

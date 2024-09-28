@@ -11,52 +11,6 @@ defmodule Mutex.ExampleTest do
     :ok
   end
 
-  test "bad example README" do
-    update_user = fn worker ->
-      IO.puts("[#{worker}] Reading user from database.")
-      Process.sleep(250)
-      IO.puts("[#{worker}] Working with user.")
-      Process.sleep(250)
-      IO.puts("[#{worker}] Saving user in database.")
-    end
-
-    {_, ref1} = spawn_monitor(fn -> update_user.("worker 1") end)
-    {_, ref2} = spawn_monitor(fn -> update_user.("worker 2") end)
-    {_, ref3} = spawn_monitor(fn -> update_user.("worker 3") end)
-
-    await_refs([ref1, ref2, ref3])
-  end
-
-  test "good example README" do
-    resource_id = {User, {:id, 1}}
-
-    update_user = fn worker ->
-      lock = Mutex.await(@mut, resource_id)
-      IO.puts("[#{worker}] Reading user from database.")
-      Process.sleep(250)
-      IO.puts("[#{worker}] Working with user.")
-      Process.sleep(250)
-      IO.puts("[#{worker}] Saving user in database.")
-      Mutex.release(@mut, lock)
-    end
-
-    {_, ref4} = spawn_monitor(fn -> update_user.("worker 4") end)
-    {_, ref5} = spawn_monitor(fn -> update_user.("worker 5") end)
-    {_, ref6} = spawn_monitor(fn -> update_user.("worker 6") end)
-
-    await_refs([ref4, ref5, ref6])
-  end
-
-  defp await_refs([]), do: :ok
-
-  defp await_refs([h | t]) do
-    receive do
-      {:DOWN, ^h, :process, _, _} -> await_refs(t)
-    after
-      5000 -> flunk("process did not exit")
-    end
-  end
-
   test "Bad Concurrency" do
     filename = "test/tmp/wrong-file.txt"
     setup_test_file(filename)
@@ -92,7 +46,6 @@ defmodule Mutex.ExampleTest do
   end
 
   defp setup_test_file(filename) do
-    File.rm!(filename)
     File.write!(filename, "0")
   end
 

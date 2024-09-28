@@ -1,7 +1,16 @@
 defmodule Mutex do
   alias Mutex.Lock
+  import Kernel, except: [send: 2]
   require Logger
   use GenServer
+
+  defmodule LockError do
+    defexception [:key]
+
+    def message(%{key: key}) do
+      "key #{inspect(key)} is already locked"
+    end
+  end
 
   @typedoc "The name of a mutex is an atom, registered with `Process.register/2`"
   @type name :: atom
@@ -88,12 +97,8 @@ defmodule Mutex do
   @spec lock!(name :: name, key :: key) :: Lock.t()
   def lock!(mutex, key) do
     case lock(mutex, key) do
-      {:ok, lock} ->
-        lock
-
-      err ->
-        raise "Locking of key #{inspect(key)} is impossible, " <>
-                "the key is already locked (#{inspect(err)})."
+      {:ok, lock} -> lock
+      {:error, :busy} -> raise LockError, key: key
     end
   end
 
@@ -110,9 +115,8 @@ defmodule Mutex do
   be slightly longer.
 
   Default timeout is `5000` milliseconds. If the timeout is reached, the caller
-  process exists as in `GenServer.call/3`.
-  More information in the [timeouts](https://hexdocs.pm/elixir/GenServer.html#call/3-timeouts)
-  section.
+  process exits as in `GenServer.call/3`.  More information in the
+  [timeouts](https://hexdocs.pm/elixir/GenServer.html#call/3-timeouts) section.
   """
   @spec await(mutex :: name, key :: key, timeout :: timeout) :: Lock.t()
   def await(mutex, key, timeout \\ 5000)
@@ -188,16 +192,16 @@ defmodule Mutex do
   """
   @spec release(mutex :: name, lock :: Lock.t()) :: :ok
   def release(mutex, %Lock{type: :single, key: key}),
-    do: release_key(mutex, key)
+    do: release_key_async(mutex, key, self())
 
   def release(mutex, %Lock{type: :multi, keys: keys}) do
-    Enum.each(keys, &release_key(mutex, &1))
+    # TODO send all at once
+    Enum.each(keys, &release_key_async(mutex, &1, self()))
     :ok
   end
 
-  defp release_key(mutex, key) do
-    GenServer.cast(mutex, {:release, key, self()})
-    :ok
+  defp release_key_async(mutex, key, pid) do
+    :ok = GenServer.cast(mutex, {:release, key, pid})
   end
 
   @doc """
@@ -263,23 +267,72 @@ defmodule Mutex do
     release(mutex, lock)
   end
 
+  # -- Via Callbacks ----------------------------------------------------------
+
+  @doc false
+  @spec whereis_name({mutex :: name, key :: key}) :: pid | :undefined
+  def whereis_name({mutex, key}) do
+    case GenServer.call(mutex, {:where, key}) do
+      nil -> :undefined
+      pid -> if Process.alive?(pid), do: pid, else: :undefined
+    end
+  end
+
+  @doc false
+  @spec register_name({mutex :: name, key :: key}, pid) :: :yes | :no
+  def register_name({mutex, key}, pid) do
+    # Just support registering self for now
+    true = self() == pid
+
+    case Mutex.lock(mutex, key) do
+      {:ok, _lock} -> :yes
+      {:error, :busy} -> :no
+    end
+  end
+
+  @doc false
+  @spec unregister_name({mutex :: name, key :: key}) :: :ok
+  def unregister_name({mutex, key}) do
+    release_key_async(mutex, key, :"$force_release")
+  end
+
+  @doc false
+  @spec send({mutex :: name, key :: key}, term) :: pid
+  def send({mutex, key}, msg) do
+    case whereis_name({mutex, key}) do
+      pid when is_pid(pid) ->
+        Kernel.send(pid, msg)
+        pid
+
+      :undefined ->
+        :erlang.error(:badarg, [{mutex, key}, msg])
+    end
+  end
+
   # -- Server Callbacks -------------------------------------------------------
 
   defmodule S do
     @moduledoc false
-    defstruct locks: %{},
-              # owner's pids
-              owns: %{},
-              # waiters's gen_server from value
-              waiters: %{},
-              meta: nil
+    defstruct [
+      # %{lock_key => owner_pid}
+      locks: %{},
+
+      # %{owner_pid => [{owned_key, monitor_ref}]}
+      owns: %{},
+
+      # %{key => [gen_server.from()]}
+      waiters: %{},
+      meta: nil
+    ]
   end
 
+  @impl true
   def init(opts) do
-    send(self(), {:cleanup, opts[:cleanup_interval]})
+    Kernel.send(self(), {:cleanup, opts[:cleanup_interval]})
     {:ok, %S{meta: opts[:meta]}}
   end
 
+  @impl true
   def handle_call(:get_meta, _from, state) do
     {:reply, state.meta, state}
   end
@@ -298,10 +351,24 @@ defmodule Mutex do
     end
   end
 
+  def handle_call({:where, key}, _from, state) do
+    reply =
+      case Map.fetch(state.locks, key) do
+        {:ok, pid} -> pid
+        :error -> nil
+      end
+
+    {:reply, reply, state}
+  end
+
+  @impl true
   def handle_cast({:release, key, pid}, state) do
     case Map.fetch(state.locks, key) do
       {:ok, ^pid} ->
         {:noreply, rm_lock(state, key, pid)}
+
+      {:ok, owner_pid} when pid == :"$force_release" ->
+        {:noreply, rm_lock(state, key, owner_pid)}
 
       {:ok, other_pid} ->
         Logger.error("Could not release #{inspect(key)}, bad owner",
@@ -322,6 +389,7 @@ defmodule Mutex do
     {:noreply, clear_owner(state, pid, :goodbye)}
   end
 
+  @impl true
   def handle_info(_info = {:DOWN, _ref, :process, pid, _}, state) do
     {:noreply, clear_owner(state, pid, :DOWN)}
   end
@@ -340,16 +408,12 @@ defmodule Mutex do
 
   defp set_lock(state = %S{locks: locks, owns: owns}, key, pid) do
     # Logger.debug "LOCK #{inspect key}"
-    new_locks =
-      locks
-      |> Map.put(key, pid)
+    new_locks = Map.put(locks, key, pid)
 
     ref = Process.monitor(pid)
     keyref = {key, ref}
 
-    new_owns =
-      owns
-      |> Map.update(pid, [keyref], fn keyrefs -> [keyref | keyrefs] end)
+    new_owns = Map.update(owns, pid, [keyref], fn keyrefs -> [keyref | keyrefs] end)
 
     %S{state | locks: new_locks, owns: new_owns}
   end
@@ -360,8 +424,7 @@ defmodule Mutex do
     new_locks = Map.delete(locks, key)
 
     new_owns =
-      owns
-      |> Map.update(pid, [], fn keyrefs ->
+      Map.update(owns, pid, [], fn keyrefs ->
         {{_key, ref}, new_keyrefs} = List.keytake(keyrefs, key, 0)
         Process.demonitor(ref, [:flush])
         new_keyrefs
@@ -405,9 +468,7 @@ defmodule Mutex do
   defp set_waiter(state = %S{waiters: waiters}, key, from) do
     # Maybe we should monitor the waiter to not send useless message when the
     # key is available if the waiter is down ?
-    new_waiters =
-      waiters
-      |> Map.update(key, [from], fn waiters -> [from | waiters] end)
+    new_waiters = Map.update(waiters, key, [from], fn waiters -> [from | waiters] end)
 
     %S{state | waiters: new_waiters}
   end
