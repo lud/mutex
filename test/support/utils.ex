@@ -74,7 +74,7 @@ defmodule Mutex.Test.Utils do
     end
 
     if link? do
-      tspawn(executor)
+      xspawn(executor)
     else
       spawn(executor)
     end
@@ -82,7 +82,7 @@ defmodule Mutex.Test.Utils do
 
   def hang do
     receive do
-      :stop -> Logger.debug("Hanging stops")
+      :this_should_never_be_sent -> Logger.debug("Hanging stops")
     end
   end
 
@@ -92,12 +92,25 @@ defmodule Mutex.Test.Utils do
   end
 
   def kill(pid) do
+    Process.unlink(pid)
     Process.exit(pid, :kill)
   end
 
-  def tspawn(fun) do
-    {Task, fun}
-    |> Supervisor.child_spec(id: :erlang.unique_integer())
-    |> ExUnit.Callbacks.start_supervised!()
+  # Spawns a process linked to the caller like spawn_link. The process is killed
+  # at the end of the test.
+  def xspawn(fun) do
+    pid = spawn_link(fun)
+    ExUnit.Callbacks.on_exit(fn -> kill(pid) end)
+    pid
+  end
+
+  def await_down(pid) when is_pid(pid) do
+    ref = Process.monitor(pid)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, reason} -> reason
+    after
+      5000 -> ExUnit.Assertions.flunk("process #{inspect(pid)} did not exit")
+    end
   end
 end

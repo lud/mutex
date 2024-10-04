@@ -66,9 +66,7 @@ defmodule Mutex.Mixfile do
       annotate: true,
       before_commit: [
         fn vsn ->
-          case System.cmd("git", ["cliff", "--tag", vsn, "-o", "CHANGELOG.md"],
-                 stderr_to_stdout: true
-               ) do
+          case System.cmd("git", ["cliff", "--tag", vsn, "-o", "CHANGELOG.md"], stderr_to_stdout: true) do
             {_, 0} -> IO.puts("Updated CHANGELOG.md with #{vsn}")
             {out, _} -> {:error, "Could not update CHANGELOG.md:\n\n #{out}"}
           end

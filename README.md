@@ -13,6 +13,7 @@
 - [Using Mutex](#using-mutex)
 - [Error Handling](#error-handling)
 - [Avoiding Deadlocks](#avoiding-deadlocks)
+- [Lock handover](#lock-handover)
 - [Name registration](#name-registration)
 - [Metadata (Removed)](#metadata-removed)
 - [Copyright and License](#copyright-and-license)
@@ -190,6 +191,51 @@ end
 If you really have to lock keys in a loop, or in mutiple moments, the `Mutex.goodbye/1` function allows to simply release all the keys locked by the calling process in one call.
 
 
+## Lock handover
+
+It is possible to transfer ownership of a lock to another process with the
+`Mutex.give_away/4` function.
+
+This is useful if you need to check that a resource is available and then start
+a long running process that needs the lock and terminate quickly.
+
+For instance, we want to have one instance only of a video encoding process in
+our application. Video encoding is started from a web controller that needs to
+send an HTTP response in a timely fashion.
+
+```elixir
+def handle_request(encoding_request) do
+  case Mutex.lock(MyMutex, :encoding_server) do
+    {:error, :busy} ->
+      "encoding not available"
+
+    {:ok, lock} ->
+      {:ok, task_pid} =
+        Task.Supervisor.start_child(
+          Encoding.Supervisor,
+          &encode_video/0
+        )
+
+      # Here we pass the video path as the "gift data" but in the real world
+      # that should be given as an argument to the task function.
+      :ok = Mutex.give_away(MyMutex, lock, task_pid, encoding_request.path)
+      "encoding started"
+  end
+end
+
+def encode_video do
+  receive do
+    {:"MUTEX-TRANSFER", _, lock, video_path} ->
+      Encoder.encode_video(video_path)
+      Mutex.release(MyMutex, lock)
+      Encoder.cleanup(video_path)
+  after
+    1000 -> exit(:no_lock_received)
+  end
+end
+```
+
+
 ## Name registration
 
 Processes having a key locked in a `Mutex` can be called using a `:via` tuple with `GenServer.call/3` or `GenServer.cast/2`.
@@ -236,9 +282,9 @@ In this case the lock is automatically taken by the `GenServer` process.
 **Important**, this mechanism is intended for use with mutexes handling a small
 amount of processes working together. Do not use name registration with a single
 mutex in you application or you could get bottlenecks. The
-[Registry](https://hexdocs.pm/elixir/Registry.html#module-using-in-via) module is intended for such
-uses and supports unique keys and partitionning registered keys for
-performance.
+[Registry](https://hexdocs.pm/elixir/Registry.html#module-using-in-via) module
+is intended for such uses and supports unique keys and partitionning registered
+keys for performance.
 
 
 

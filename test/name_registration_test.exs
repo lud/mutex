@@ -20,7 +20,7 @@ defmodule Mutex.NameRegistrationTest do
     key = :i_am_here
     via = via(key)
 
-    tspawn(fn ->
+    xspawn(fn ->
       _lock = Mutex.lock!(@mut, key)
       ack.(self())
       hang()

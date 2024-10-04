@@ -1,6 +1,7 @@
 defmodule Mutex do
   alias Mutex.Lock
   alias Mutex.LockError
+  alias Mutex.ReleaseError
   import Kernel, except: [send: 2]
   require Logger
   use GenServer
@@ -13,8 +14,8 @@ defmodule Mutex do
   """
   @gen_opts [:debug, :name, :timeout, :spawn_opt, :hibernate_after]
 
-  @typedoc "The name of a mutex is an atom, registered with `Process.register/2`"
-  @type name :: atom
+  @typedoc "Identifier for a mutex process."
+  @type name :: GenServer.server()
 
   @typedoc "A key can be any term."
   @type key :: any
@@ -141,7 +142,7 @@ defmodule Mutex do
 
   defp await_sorted(mutex, [last | []], :infinity, locked_keys) do
     %Lock{} = await(mutex, last, :infinity)
-    keys2multilock([last | locked_keys])
+    keys2multilock(:lists.reverse([last | locked_keys]))
   end
 
   defp await_sorted(mutex, [key | keys], :infinity, locked_keys) do
@@ -235,6 +236,38 @@ defmodule Mutex do
     release(mutex, lock)
   end
 
+  @doc """
+  Sets the the process identified by `pid` as the new owner of the `lock`.
+
+  If succesful, that new owner will be sent a `{:"MUTEX-TRANSFER", from_pid,
+  lock, gift_data} ` message. If it is not alive, the lock will be released.
+
+  This function only supports single key locks.
+  """
+  @doc since: "3.0.0"
+  @spec give_away(mutex :: name, Lock.t(), pid, gift_data :: term) :: :ok
+  def give_away(mutex, lock, pid, gift_data \\ nil)
+
+  def give_away(_mutex, %Lock{type: :single}, pid, _gift_data) when pid == self() do
+    raise ArgumentError, "process #{inspect(pid)} is already owner of the lock"
+  end
+
+  def give_away(mutex, %Lock{type: :single, key: key} = lock, pid, gift_data) when is_pid(pid) do
+    from_pid = self()
+
+    case GenServer.call(mutex, {:give_away, key, from_pid, pid}) do
+      :ok ->
+        Kernel.send(pid, {:"MUTEX-TRANSFER", from_pid, lock, gift_data})
+        :ok
+
+      {:error, {:bad_owner, owner}} ->
+        raise ReleaseError, owner: owner, releaser: from_pid, key: key, action: :give_away
+
+      {:error, :unknown_lock} ->
+        raise ReleaseError, releaser: from_pid, key: key, action: :give_away
+    end
+  end
+
   # -- Via Callbacks ----------------------------------------------------------
 
   @doc false
@@ -325,6 +358,24 @@ defmodule Mutex do
       case Map.fetch(state.locks, key) do
         {:ok, pid} -> pid
         :error -> nil
+      end
+
+    {:reply, reply, state}
+  end
+
+  def handle_call({:give_away, key, caller_pid, heir_pid}, _from, state) do
+    {reply, state} =
+      case Map.fetch(state.locks, key) do
+        {:ok, ^caller_pid} ->
+          state = rm_lock(state, key, caller_pid)
+          state = set_lock(state, key, heir_pid)
+          {:ok, state}
+
+        {:ok, owner_pid} ->
+          {{:error, {:bad_owner, owner_pid}}, state}
+
+        :error ->
+          {{:error, :unknown_lock}, state}
       end
 
     {:reply, reply, state}

@@ -31,7 +31,7 @@ defmodule MutexTest do
   test "can't acquire locked key" do
     {ack, wack} = awack()
 
-    tspawn(fn ->
+    xspawn(fn ->
       Mutex.lock!(@mut, :key1)
 
       ack.()
@@ -48,7 +48,7 @@ defmodule MutexTest do
   test "can wait for key is released when owner dies" do
     {ack, wack} = awack()
 
-    tspawn(fn ->
+    xspawn(fn ->
       Mutex.lock!(@mut, :key2)
       ack.()
       Process.sleep(100)
@@ -62,7 +62,7 @@ defmodule MutexTest do
     {ack, wack} = awack()
 
     pid =
-      tspawn(fn ->
+      xspawn(fn ->
         Mutex.lock!(@mut, :key3)
         ack.()
         hang()
@@ -87,7 +87,7 @@ defmodule MutexTest do
 
     {ack_waiter, wack_waiter} = awack(:infinity)
 
-    tspawn(fn ->
+    xspawn(fn ->
       assert {:error, :busy} = Mutex.lock(@mut, :inf_key)
       # infinity timeout is valid
       assert %Lock{} = Mutex.await(@mut, :inf_key, :infinity)
@@ -157,9 +157,7 @@ defmodule MutexTest do
               :ok
 
             e ->
-              Logger.debug(
-                "Rescued unexcepted exception #{inspect(e)}\n#{inspect(__STACKTRACE__)}"
-              )
+              Logger.debug("Rescued unexcepted exception #{inspect(e)}\n#{inspect(__STACKTRACE__)}")
 
               :ok
           end
@@ -191,7 +189,7 @@ defmodule MutexTest do
   test "can't release a key if not owner" do
     {ack, wack} = vawack()
 
-    tspawn(fn ->
+    xspawn(fn ->
       lock = Mutex.lock!(@mut, :not_mine)
       ack.(lock)
       hang()
@@ -221,7 +219,7 @@ defmodule MutexTest do
     # * This process release those keys but with other inexistent keys.
     lock = Mutex.await_all(@mut, [:k1, :k2])
 
-    tspawn(fn ->
+    xspawn(fn ->
       Mutex.await_all(@mut, [:k2, :k1])
       ack.()
     end)
@@ -245,7 +243,7 @@ defmodule MutexTest do
 
     key = [{:t1, %{"compound" => ~c"key"}}, {}, %{}, "hello", pid]
 
-    tspawn(fn ->
+    xspawn(fn ->
       lock = Mutex.lock!(pid, key)
       Mutex.release(pid, lock)
       ack.(lock)
@@ -264,18 +262,16 @@ defmodule MutexTest do
 
     key = [{:t1, %{"compound" => ~c"key"}}, {}, %{}, "hello", pid]
 
-    friend =
-      tspawn(fn ->
-        lock = Mutex.lock!(pid, key)
-        ack.(lock)
-        hang()
-      end)
+    xspawn(fn ->
+      lock = Mutex.lock!(pid, key)
+      ack.(lock)
+      hang()
+    end)
 
     lock = wack.()
 
     assert :ok = Mutex.release(pid, lock)
 
-    send(friend, :stop)
     GenServer.stop(pid)
   end
 end

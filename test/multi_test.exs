@@ -53,7 +53,7 @@ defmodule Mutex.MultiTest do
   # spawns a process that loop forever and locks <key> for <tin> time, release,
   # wait for <tout> time and start over
   defp spawn_single_locker(mutex, key, tin \\ 200, tout \\ 150) do
-    tspawn(fn -> locker_loop(mutex, key, tin, tout) end)
+    xspawn(fn -> locker_loop(mutex, key, tin, tout) end)
   end
 
   defp locker_loop(mutex, key, tin, tout) do
