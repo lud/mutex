@@ -37,7 +37,7 @@ defmodule Mutex.Mixfile do
     [
       description:
         "This package implements a simple mutex as a GenServer. " <>
-          "It allows to await locked keys and handles locking multiple keys " <>
+          "It allows to lock keys and handles locking multiple keys " <>
           "without deadlocks.",
       licenses: ["MIT"],
       maintainers: ["Ludovic Demblans <ludovic@demblans.com>"],

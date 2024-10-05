@@ -10,7 +10,8 @@ defmodule Mutex do
   This is the main module in this application, it implements a mutex as a
   GenServer with a notification system to be able to await lock releases.
 
-  See [`README.md`](https://hexdocs.pm/mutex/readme.html) for how to use.
+  See [`README.md`](https://hexdocs.pm/mutex/readme.html) for usage
+  instructions.
   """
   @gen_opts [:debug, :name, :timeout, :spawn_opt, :hibernate_after]
 
@@ -194,18 +195,14 @@ defmodule Mutex do
   Otherwise the arity must be 0. You should not manually release the
   lock within the function.
   """
-  @spec under(
-          mutex :: name,
-          key :: key,
-          timeout :: timeout,
-          fun :: (-> any) | (Lock.t() -> any)
-        ) :: any
-  def under(mutex, key, timeout \\ :infinity, fun)
+  @doc since: "3.0.0"
+  @spec with_lock(mutex :: name, key :: key, timeout :: timeout, fun :: (-> any) | (Lock.t() -> any)) :: any
+  def with_lock(mutex, key, timeout \\ :infinity, fun)
 
-  def under(mutex, key, timeout, fun) when is_function(fun, 0),
-    do: under(mutex, key, timeout, fn _ -> fun.() end)
+  def with_lock(mutex, key, timeout, fun) when is_function(fun, 0),
+    do: with_lock(mutex, key, timeout, fn _ -> fun.() end)
 
-  def under(mutex, key, timeout, fun) when is_function(fun, 1) do
+  def with_lock(mutex, key, timeout, fun) when is_function(fun, 1) do
     lock = await(mutex, key, timeout)
     apply_with_lock(mutex, lock, fun)
   end
@@ -221,11 +218,12 @@ defmodule Mutex do
   Otherwise the arity must be 0. You should not manually release the
   lock within the function.
   """
-  @spec under_all(mutex :: name, keys :: [key], fun :: (-> any) | (Lock.t() -> any)) :: any
-  def under_all(mutex, keys, fun) when is_function(fun, 0),
-    do: under_all(mutex, keys, fn _ -> fun.() end)
+  @doc since: "3.0.0"
+  @spec with_lock_all(mutex :: name, keys :: [key], fun :: (-> any) | (Lock.t() -> any)) :: any
+  def with_lock_all(mutex, keys, fun) when is_function(fun, 0),
+    do: with_lock_all(mutex, keys, fn _ -> fun.() end)
 
-  def under_all(mutex, keys, fun) when is_function(fun, 1) do
+  def with_lock_all(mutex, keys, fun) when is_function(fun, 1) do
     lock = await_all(mutex, keys)
     apply_with_lock(mutex, lock, fun)
   end
@@ -234,6 +232,18 @@ defmodule Mutex do
     fun.(lock)
   after
     release(mutex, lock)
+  end
+
+  @doc "Alias for `with_lock/4`."
+  @deprecated "use with_lock/4 instead"
+  def under(mutex, key, timeout \\ :infinity, fun) do
+    with_lock(mutex, key, timeout, fun)
+  end
+
+  @doc "Alias for `with_lock/3`."
+  @deprecated "use with_lock/3 instead"
+  def under_all(mutex, key, fun) do
+    with_lock_all(mutex, key, fun)
   end
 
   @doc """

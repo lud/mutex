@@ -107,7 +107,7 @@ defmodule MutexTest do
       # here we catch so the process does not exit, so the lock is not released
       # because of an exit (false positive) but because the lib removes it
       try do
-        Mutex.under(@mut, :wrap1, :infinity, fn ->
+        Mutex.with_lock(@mut, :wrap1, :infinity, fn ->
           ack.()
           throw(:fail)
         end)
@@ -124,7 +124,7 @@ defmodule MutexTest do
     {ack, wack} = awack(:infinity)
 
     spawn_hang(false, fn ->
-      Mutex.under(@mut, :wrap2, :infinity, fn ->
+      Mutex.with_lock(@mut, :wrap2, :infinity, fn ->
         ack.()
         Logger.debug("exit from pid #{inspect(self())}")
         exit(:fail)
@@ -142,7 +142,7 @@ defmodule MutexTest do
 
     spawn_hang(fn ->
       try do
-        Mutex.under_all(@mut, keys, fn ->
+        Mutex.with_lock_all(@mut, keys, fn ->
           ack.()
           Logger.debug("Will raise #{errmsg}")
           raise errmsg
@@ -228,13 +228,13 @@ defmodule MutexTest do
     assert :ok = wack.()
   end
 
-  test "under and under_all return values" do
+  test "with_lock and with_lock_all return values" do
     {:ok, pid} = Mutex.start_link()
 
-    assert :some_val = Mutex.under(pid, :my_key, fn -> :some_val end)
-    assert :some_val = Mutex.under(pid, :my_key, fn _lock -> :some_val end)
-    assert :some_val = Mutex.under_all(pid, [:my_key, :my_other], fn -> :some_val end)
-    assert :some_val = Mutex.under_all(pid, [:my_key, :my_other], fn _lock -> :some_val end)
+    assert :some_val = Mutex.with_lock(pid, :my_key, fn -> :some_val end)
+    assert :some_val = Mutex.with_lock(pid, :my_key, fn _lock -> :some_val end)
+    assert :some_val = Mutex.with_lock_all(pid, [:my_key, :my_other], fn -> :some_val end)
+    assert :some_val = Mutex.with_lock_all(pid, [:my_key, :my_other], fn _lock -> :some_val end)
   end
 
   test "error logger can log unknown compound keys on release" do

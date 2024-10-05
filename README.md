@@ -5,12 +5,18 @@
 [![License](https://img.shields.io/hexpm/l/mutex.svg)](https://github.com/lud/mutex/blob/master/LICENSE.md)
 [![Last Updated](https://img.shields.io/github/last-commit/lud/mutex.svg)](https://github.com/lud/mutex/commits/main)
 
-`Mutex` is a simple mutex module that fits under your supervision tree and allows processes to work on shared ressources one by one. This can be a simple alternative to database transactions. Also, `Mutex` supports multiple keys locking without deadlocks.
+`Mutex` is a lightweight mutex or "locks" implementation that fits under your
+supervision tree and allows processes to work on shared ressources one by one.
+
+This can be a simple alternative to job queues or filesystem transactions and
+allows to limit resource usage on a server.
+
+Also, `Mutex` supports locking multiple keys without deadlocks.
 
 
 - [Documentation](#documentation)
 - [Installation](#installation)
-- [Using Mutex](#using-mutex)
+- [Basic usage](#basic-usage)
 - [Error Handling](#error-handling)
 - [Avoiding Deadlocks](#avoiding-deadlocks)
 - [Lock handover](#lock-handover)
@@ -21,12 +27,13 @@
 
 ## [Documentation](https://hexdocs.pm/mutex/)
 
-The documentation is hosted on Hexdocs.
+The documentation is hosted on [Hexdocs](https://hexdocs.pm/mutex/).
 
 
 ## Installation
 
-This package can be installed by adding `:mutex` to your list of dependencies in `mix.exs`:
+This package can be installed by adding `:mutex` to your list of dependencies in
+`mix.exs`:
 
 ```elixir
 def deps do
@@ -37,80 +44,80 @@ end
 ```
 
 
-## Using Mutex
+## Basic usage
 
-A mutex is handled by a process that you start in your supervision tree with [`child_spec(name)`](https://hexdocs.pm/mutex/Mutex.html#child_spec/1).
+This library implements a mutex as a process that you would generally start
+under a supervision tree.
 
-See `Mutex.start_link/1` for options.
-
-```elixir
-children = [
-  {Mutex, name: MyMutex}
-]
-{:ok, _pid} = Supervisor.start_link(children, strategy: :one_for_one)
-```
-
-Let's see a bad example of concurrent code without database transactions.
+See [start_link/1](https://hexdocs.pm/mutex/Mutex.html#start_link/1) for options.
 
 ```elixir
-resource_id = :some_user_id # unused in example
-update_user = fn(worker) ->
-  imIO.puts "[#{worker}] Reading user from database."
-  Process.sleep(250)
-  IO.puts "[#{worker}] Working with user."
-  Process.sleep(250)
-  IO.puts "[#{worker}] Saving user in database."
-  Process.sleep(500)
+defmodule MyApp.Application do
+  @moduledoc false
+
+  use Application
+
+  @impl true
+  def start(_type, _args) do
+    children = [
+      {Mutex, name: MyApp.Mutex}
+    ]
+
+    Supervisor.start_link(children, strategy: :one_for_one)
+  end
 end
-spawn(fn -> update_user.("worker 1") end)
-spawn(fn -> update_user.("worker 2") end)
-spawn(fn -> update_user.("worker 3") end)
-
-# Results :
-# [worker 1] Reading user from database.
-# [worker 2] Reading user from database.
-# [worker 3] Reading user from database.
-# [worker 1] Working with user.
-# [worker 2] Working with user.
-# [worker 3] Working with user.
-# [worker 2] Saving user in database. # order is not guaranteed either
-# [worker 1] Saving user in database.
-# [worker 3] Saving user in database.
 ```
 
-Serialized transactions could be a good fit for this specific case, but let's see another simple solution :
+Now from anywhere in the application code you can lock access to a a resource
+with the guarantee that no concurrent execution of that code can be executed.
 
-With a simple mutex mechanism, workers will be able to wait until the resource is saved in database before loading it, with the guarantee that any other worker will not be able to touch the resource.
-
-Each worker will wait for the key identifying the resource to be available on the mutex and attempt to lock it. A key can be anything : `:my_resource`, `{User, user_id}`, `"http://example.com"` or more complex structures.
-
-When the lock is eventually acquired, the worker can work with the resource. Of course, this works only if all your workers use the mutex, with the same key.
+Of course, this requires that all code attempting to access that resource uses
+the mutex as well.
 
 ```elixir
-resource_id = {User, {:id, 1}}
-update_user = fn(worker) ->
-  lock = Mutex.await(MyMutex, resource_id)
-  IO.puts "[#{worker}] Reading user from database."
-  Process.sleep(250)
-  IO.puts "[#{worker}] Working with user."
-  Process.sleep(250)
-  IO.puts "[#{worker}] Saving user in database."
-  Mutex.release(MyMutex, lock)
-end
-spawn(fn -> update_user.("worker 4") end)
-spawn(fn -> update_user.("worker 5") end)
-spawn(fn -> update_user.("worker 6") end)
-
-# [worker 4] Reading user from database.
-# [worker 4] Working with user.
-# [worker 4] Saving user in database.
-# [worker 5] Reading user from database.
-# [worker 5] Working with user.
-# [worker 5] Saving user in database.
-# [worker 6] Reading user from database.
-# [worker 6] Working with user.
-# [worker 6] Saving user in database.
+lock = Mutex.await(MyApp.Mutex, :file_manager)
+do_something_with_the_filesystem(arg)
+:ok = Mutex.release(MyApp.Mutex, lock)
 ```
+
+To automatically lock and release the key, use `Mutex.with_lock/3`:
+
+```elixir
+Mutex.with_lock(MyApp.Mutex, :file_manager, fn ->
+  do_something_with_the_filesystem(arg)
+end)
+```
+
+Here is a more complete example of working with storing data in a file:
+
+```elixir
+path = "/tmp/counter-#{System.system_time(:microsecond)}"
+
+File.write!(path, "0")
+
+tasks =
+  for _ <- 1..10 do
+    Task.async(fn ->
+      Mutex.with_lock(MyApp.Mutex, :file_manager, fn ->
+        counter = String.to_integer(File.read!(path))
+        File.write!(path, Integer.to_string(counter + 1))
+      end)
+    end)
+  end
+
+Enum.each(tasks, &Task.await/1)
+
+counter = String.to_integer(File.read!(path))
+IO.puts("Total count is: #{counter}")
+```
+
+This will output:
+
+```
+Total count is: 10
+```
+
+The same code but without the mutex will generally give a final value of `1`.
 
 
 ## Error Handling
@@ -124,10 +131,10 @@ unnecessary keys locked for a while :
 ```elixir
 # Do not do this
 try do
-  lock = Mutex.await(MyMutex, :some_key)
+  lock = Mutex.await(MyApp.Mutex, :some_key)
   throw(:fail)
-  # This will never happen:
-  Mutex.release(MyMutex, lock)
+  # This will never be called:
+  Mutex.release(MyApp.Mutex, lock)
 catch
   :throw, :fail -> :ok
 end
@@ -135,12 +142,16 @@ end
 
 Whenever possible, avoid to lock keys in `try`, `if`, `for`, ... blocks.
 
-The mutex provides a mechanism to automatically handle this situation. Using `Mutex.under/3`, the calling process will wait for the key to be available and lock it. Then the passed `fn` will be executed and if it raises or throws, the lock will automatically be removed. Exceptions and thrown values are reraised and rethrown so you still have to handle them.
+When using `Mutex.with_lock/3`, the lock will be automatically released if the
+given fun raises, throws, or exits.
+
+Exceptions and thrown values are reraised and rethrown so you still have to
+handle them.
 
 ```elixir
 # Do this instead
 try do
-  Mutex.under(MyMutex, :some_key, fn ->
+  Mutex.with_lock(MyApp.Mutex, :some_key, fn ->
     throw(:fail)
   end)
 catch
@@ -148,47 +159,54 @@ catch
 end
 ```
 
-A multilock version is also available with `Mutex.under_all/3`.
+A multilock version is also available with `Mutex.with_lock_all/3`.
 
-Both functions can accept a fun of arity `1` that will be passed the lock.
+Both functions can accept a fun of arity `1` that will be given the lock as its
+argument.
 
 
 ## Avoiding Deadlocks
 
-A deadlock would occur if the keys were locked one by one with a race condition :
+A deadlock would occur if multiple processes would attempt to lock the same keys
+in a different order:
 
 ```elixir
   # Do not do this
 
   def handle_order(buyer, seller) do
-    lock1 = Mutex.await(MyMutex, buyer)
-    lock2 = Mutex.await(MyMutex, seller)
+    lock1 = Mutex.await(MyApp.Mutex, buyer)
+    lock2 = Mutex.await(MyApp.Mutex, seller)
     do_some_work_with_users(buyer, seller)
-    Mutex.release(MyMutex, lock1)
-    Mutex.release(MyMutex, lock2)
+    Mutex.release(MyApp.Mutex, lock1)
+    Mutex.release(MyApp.Mutex, lock2)
   end
 
   spawn(fn -> handler_order(:user_1, :user_2) end) # Process 1
   spawn(fn -> handler_order(:user_2, :user_1) end) # Process 2
 ```
 
-Process 1 will first lock `:user_1` and process 2 will lock `:user_2`, and then each process is waiting for the key that is already locked by the other one.
+Process 1 will first lock `:user_1` and process 2 will lock `:user_2`, and then
+each process is waiting for the key that is already locked by the other one.
 
-**If any process should have, at any given time, several keys locked, those keys shall have been locked all at once.**
+**If any process should have, at any given time, several keys locked, those keys
+shall have been locked all at once.**
 
-This simple rule is mandatory and sufficient to be free from deadlocks, and `Mutex.await_all/2` is the simplest way to respect that rule.
+This simple rule is enough to be free from deadlocks, and `Mutex.await_all/2` is
+the simplest way to respect that rule.
 
 ```elixir
 # Do this instead
 
 def handle_order(buyer, seller) do
-  lock = Mutex.await_all(MyMutex, [buyer, seller])
+  lock = Mutex.await_all(MyApp.Mutex, [buyer, seller])
   do_some_work_with_users(buyer, seller)
-  Mutex.release(MyMutex, lock)
+  Mutex.release(MyApp.Mutex, lock)
 end
 ```
 
-If you really have to lock keys in a loop, or in mutiple moments, the `Mutex.goodbye/1` function allows to simply release all the keys locked by the calling process in one call.
+If you really have to lock keys in a loop, or at different places, the
+`Mutex.goodbye/1` function allows to simply release all the keys locked by the
+calling process at once.
 
 
 ## Lock handover
@@ -205,7 +223,7 @@ send an HTTP response in a timely fashion.
 
 ```elixir
 def handle_request(encoding_request) do
-  case Mutex.lock(MyMutex, :encoding_server) do
+  case Mutex.lock(MyApp.Mutex, :encoding_server) do
     {:error, :busy} ->
       "encoding not available"
 
@@ -218,7 +236,7 @@ def handle_request(encoding_request) do
 
       # Here we pass the video path as the "gift data" but in the real world
       # that should be given as an argument to the task function.
-      :ok = Mutex.give_away(MyMutex, lock, task_pid, encoding_request.path)
+      :ok = Mutex.give_away(MyApp.Mutex, lock, task_pid, encoding_request.path)
       "encoding started"
   end
 end
@@ -227,7 +245,7 @@ def encode_video do
   receive do
     {:"MUTEX-TRANSFER", _, lock, video_path} ->
       Encoder.encode_video(video_path)
-      Mutex.release(MyMutex, lock)
+      Mutex.release(MyApp.Mutex, lock)
       Encoder.cleanup(video_path)
   after
     1000 -> exit(:no_lock_received)
@@ -253,28 +271,28 @@ The `:via` tuple is built as follows:
 Example calling a `GenServer` process with such tuples:
 
 ```elixir
-{:ok, _} = Mutex.start_link(name: MyMutex)
+{:ok, _} = Mutex.start_link(name: MyApp.Mutex)
 
 defmodule MyGenServer do
-  def init(_), do: Mutex.lock(MyMutex, :some_key)
+  def init(_), do: Mutex.lock(MyApp.Mutex, :some_key)
   def handle_call(:greetings, _, state), do: {:reply, :hello, state}
 end
 
 {:ok, _} = GenServer.start_link(MyGenServer, [])
-:hello = GenServer.call({:via, Mutex, {MyMutex, :some_key}}, :greetings)
+:hello = GenServer.call({:via, Mutex, {MyApp.Mutex, :some_key}}, :greetings)
 ```
 
 This lets you check if a key is currently locked in the Mutex:
 
 ```
 # Returns #PID<…> or nil
-GenServer.whereis({:via, Mutex, {MyMutex, :some_key}})
+GenServer.whereis({:via, Mutex, {MyApp.Mutex, :some_key}})
 ```
 
 As any other name registry, you can directly set the name of your process in `GenServer.start_link/3`:
 
 ```elixir
-GenServer.start_link(MyGenServer, [], name: {:via, Mutex, {MyMutex, :some_key}})
+GenServer.start_link(MyGenServer, [], name: {:via, Mutex, {MyApp.Mutex, :some_key}})
 ```
 
 In this case the lock is automatically taken by the `GenServer` process.
@@ -290,7 +308,7 @@ keys for performance.
 
 ## Metadata (Removed)
 
-A `Mutex` process could carry metadata attached to it and would send it to any
+A Mutex process could carry metadata attached to it and would send it to any
 process acquiring a lock. This has been removed as it was confusing. Metadata
 was not tied to a given key but to the mutex itself.
 

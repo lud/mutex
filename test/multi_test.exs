@@ -91,7 +91,7 @@ defmodule Mutex.MultiTest do
 
     procs =
       Enum.map(spawn_specs, fn {name, keys} ->
-        {name, spawn_monitor(fn -> under_loop(pid, name, keys, n_iter) end)}
+        {name, spawn_monitor(fn -> with_lock_loop(pid, name, keys, n_iter) end)}
       end)
 
     Enum.each(procs, fn {name, {pid, mref}} ->
@@ -101,15 +101,15 @@ defmodule Mutex.MultiTest do
     end)
   end
 
-  def under_loop(_mutex, name, _keys, 0) do
+  def with_lock_loop(_mutex, name, _keys, 0) do
     exit(name)
   end
 
-  def under_loop(mutex, name, keys, iterations) when iterations > 0 do
-    _ = Mutex.under_all(mutex, keys, fn -> :ok end)
+  def with_lock_loop(mutex, name, keys, iterations) when iterations > 0 do
+    _ = Mutex.with_lock_all(mutex, keys, fn -> :ok end)
 
     iterations = iterations - 1
 
-    under_loop(mutex, name, keys, iterations)
+    with_lock_loop(mutex, name, keys, iterations)
   end
 end

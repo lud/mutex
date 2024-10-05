@@ -1,60 +1,87 @@
 defmodule Mutex.ExampleTest do
-  import Mutex.Test.Utils
   require Logger
   use ExUnit.Case, async: true
 
   @moduletag :capture_log
-  @mut rand_mod()
 
   setup do
-    {:ok, _pid} = start_supervised({Mutex, name: @mut})
+    {:ok, _pid} = start_supervised({Mutex, name: MyApp.Mutex})
     :ok
   end
 
-  test "Bad Concurrency" do
-    filename = "test/tmp/wrong-file.txt"
-    setup_test_file(filename)
+  describe "basic usage" do
+    test "file count" do
+      path = "/tmp/counter-#{System.system_time(:microsecond)}"
 
-    tasks = for _ <- 1..10, do: Task.async(fn -> sloppy_increment_file(filename) end)
+      File.write!(path, "0")
 
-    # await all tasks
-    Enum.each(tasks, &Task.await(&1))
+      tasks =
+        for _ <- 1..10 do
+          Task.async(fn ->
+            Mutex.with_lock(MyApp.Mutex, :file_manager, fn ->
+              counter = String.to_integer(File.read!(path))
+              File.write!(path, Integer.to_string(counter + 1))
+            end)
+          end)
+        end
 
-    # file val was read from all process at 0, then written incremented
-    # so the file is "1"
-    assert "1" = File.read!(filename)
+      Enum.each(tasks, &Task.await/1)
+
+      # counter = String.to_integer(File.read!(path))
+      # IO.puts("Total count is: #{counter}")
+    end
   end
 
-  test "Mutex Concurrency" do
-    filename = "test/tmp/good-file.txt"
-    setup_test_file(filename)
-
-    tasks =
-      for _ <- 1..10 do
-        Task.async(fn ->
-          lock = Mutex.await(@mut, :good_file, :infinity)
-          sloppy_increment_file(filename)
-          assert :ok = Mutex.release(@mut, lock)
-        end)
+  describe "give away" do
+    defmodule Encoder do
+      def encode_video(video_path) do
+        send(:test_process, {:encoding, video_path})
+        :ok
       end
 
-    Enum.each(tasks, &Task.await(&1))
+      def cleanup(video_path) do
+        send(:test_process, {:cleaning, video_path})
+        :ok
+      end
+    end
 
-    # file val was read from all process at 0, then written incremented
-    # so the file is "1"
-    assert "10" = File.read!(filename)
-  end
+    def handle_request(encoding_request) do
+      case Mutex.lock(MyApp.Mutex, :encoding_server) do
+        {:error, :busy} ->
+          "encoding not available"
 
-  defp setup_test_file(filename) do
-    File.write!(filename, "0")
-  end
+        {:ok, lock} ->
+          {:ok, task_pid} =
+            Task.Supervisor.start_child(
+              Encoding.Supervisor,
+              &encode_video/0
+            )
 
-  # Bad function that will reads an integer from a file, wait a little bit and
-  # then write in the incremented integer. If called concurrently, the last
-  # process that will write will overwrite every previous calculation
-  defp sloppy_increment_file(filename) do
-    int = filename |> File.read!() |> String.to_integer()
-    Process.sleep(100)
-    File.write!(filename, Integer.to_string(int + 1))
+          # Here we pass the video path as the "gift data" but in the real world
+          # that should be given as an argument to the task function.
+          :ok = Mutex.give_away(MyApp.Mutex, lock, task_pid, encoding_request.path)
+          "encoding started"
+      end
+    end
+
+    def encode_video do
+      receive do
+        {:"MUTEX-TRANSFER", _, lock, video_path} ->
+          Encoder.encode_video(video_path)
+          Mutex.release(MyApp.Mutex, lock)
+          Encoder.cleanup(video_path)
+      after
+        1000 -> exit(:no_lock_received)
+      end
+    end
+
+    test "readme example" do
+      Process.register(self(), :test_process)
+      {:ok, _} = Task.Supervisor.start_link(name: Encoding.Supervisor)
+      handle_request(%{path: "/some/path"})
+      assert_receive {:encoding, "/some/path"}
+      assert {:ok, _} = Mutex.lock(MyApp.Mutex, :encoding_server)
+      assert_receive {:cleaning, "/some/path"}
+    end
   end
 end
