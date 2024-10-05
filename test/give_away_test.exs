@@ -69,7 +69,7 @@ defmodule Mutex.GiveAwayTest do
         end
       end)
 
-    assert_raise ReleaseError, fn -> Mutex.give_away(@mut, lock, pid) end
+    ensure_message(assert_raise ReleaseError, fn -> Mutex.give_away(@mut, lock, pid) end)
 
     # The transfer message is send from the giver process, that ensures that
     # here we can test that the givee will only receive our :stop_from_test
@@ -81,7 +81,7 @@ defmodule Mutex.GiveAwayTest do
   test "cannot give away an unknown lock" do
     lock = %Mutex.Lock{type: :single, key: :made_up, keys: nil}
     pid = xspawn(&hang/0)
-    assert_raise ReleaseError, fn -> Mutex.give_away(@mut, lock, pid) end
+    ensure_message(assert_raise ReleaseError, fn -> Mutex.give_away(@mut, lock, pid) end)
   end
 
   test "can give away to non existing pid" do
@@ -102,7 +102,7 @@ defmodule Mutex.GiveAwayTest do
   test "give away to self is forbidden" do
     this = self()
     assert {:ok, lock} = Mutex.lock(@mut, :to_self)
-    assert_raise ArgumentError, fn -> Mutex.give_away(@mut, lock, this, :some_data) end
+    ensure_message(assert_raise ArgumentError, fn -> Mutex.give_away(@mut, lock, this, :some_data) end)
   end
 
   test "give away with multilocks" do

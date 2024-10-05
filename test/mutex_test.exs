@@ -1,6 +1,7 @@
 defmodule MutexTest do
   alias Mutex.Lock
   alias Mutex.LockError
+  alias Mutex.ReleaseError
   import Mutex.Test.Utils
   require Logger
   use ExUnit.Case, async: true
@@ -197,35 +198,48 @@ defmodule MutexTest do
 
     lock = wack.()
 
-    # release is a gen:cast() so it always returns :ok
-
-    # cannot release a lock owned by someone else
-    assert :ok = Mutex.release(@mut, lock)
+    assert_raise ReleaseError, fn -> Mutex.release(@mut, lock) end
     assert {:error, :busy} = Mutex.lock(@mut, :not_mine)
   end
 
-  test "can't release a key if not owner or if not registered" do
-    # Cannot release an unknown key
-    assert :ok = Mutex.release(@mut, %Lock{type: :single, key: :unregistered_key})
-    assert {:ok, _} = Mutex.lock(@mut, :unregistered_key)
-  end
-
-  test "releasing unknown keys is fine" do
-    {ack, wack} = awack()
-
-    # * This process registers 2 keys. Then a concurrent process try to acquire
-    #   them.
-    # * The second process must be able to lock the same keys.
-    # * This process release those keys but with other inexistent keys.
-    lock = Mutex.await_all(@mut, [:k1, :k2])
+  test "can't release a key if not owner (async)" do
+    {ack, wack} = vawack()
 
     xspawn(fn ->
-      Mutex.await_all(@mut, [:k2, :k1])
-      ack.()
+      lock = Mutex.lock!(@mut, :not_mine)
+      ack.(lock)
+      hang()
     end)
 
-    :ok = Mutex.release(@mut, %{lock | keys: [:other_1, :k2, :other_2, :k1, :other_3]})
-    assert :ok = wack.()
+    lock = wack.()
+
+    # release_async is a gen:cast() so it always returns :ok
+    assert :ok = Mutex.release_async(@mut, lock)
+  end
+
+  test "can't release a key if it does not exist" do
+    assert_raise ReleaseError, fn -> Mutex.release(@mut, %Lock{type: :single, key: :unregistered_key}) end
+  end
+
+  test "can't release a key if not owner or if not registered (async)" do
+    # Not sure what to test here
+    assert :ok = Mutex.release_async(@mut, %Lock{type: :single, key: :unregistered_key})
+    assert :ok = Mutex.release_async(@mut, %Lock{type: :single, key: :unregistered_key})
+  end
+
+  test "releasing multilocks with unknown keys" do
+    # Lock k1,k2
+    lock = Mutex.await_all(@mut, [:k1, :k2])
+
+    # Release k1
+    assert :ok = Mutex.release(@mut, %Lock{type: :single, key: :k1})
+
+    # Cannot release both k1,k2
+    assert_raise ReleaseError, fn -> Mutex.release(@mut, lock) end
+
+    # Still owning k2
+    assert {:error, :busy} = Mutex.lock(@mut, :k2)
+    assert self() == Mutex.whereis_name({@mut, :k2})
   end
 
   test "with_lock and with_lock_all return values" do
@@ -251,27 +265,41 @@ defmodule MutexTest do
 
     lock = wack.()
 
-    assert :ok = Mutex.release(pid, lock)
+    assert :ok = Mutex.release_async(pid, lock)
 
     GenServer.stop(pid)
   end
 
+  @tag capture_log: false
   test "error logger can log un-owned compound keys on release" do
+    # This test was created after a but where we would log the key without using
+    # inspect/1.
     {:ok, pid} = Mutex.start_link()
     {ack, wack} = vawack()
 
     key = [{:t1, %{"compound" => ~c"key"}}, {}, %{}, "hello", pid]
 
-    xspawn(fn ->
-      lock = Mutex.lock!(pid, key)
-      ack.(lock)
-      hang()
-    end)
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        xspawn(fn ->
+          lock = Mutex.lock!(pid, key)
+          ack.(lock)
+          hang()
+        end)
 
-    lock = wack.()
+        lock = wack.()
 
-    assert :ok = Mutex.release(pid, lock)
+        assert :ok = Mutex.release_async(pid, lock)
 
-    GenServer.stop(pid)
+        GenServer.stop(pid)
+      end)
+
+    # log has color and formatting
+    IO.puts(["\n", log])
+
+    generic = "Could not release key asynchronously"
+    formatted_key = inspect(key)
+    assert log =~ generic
+    assert log =~ formatted_key
   end
 end

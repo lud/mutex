@@ -80,7 +80,7 @@ defmodule Mutex.ExampleTest do
       {:ok, _} = Task.Supervisor.start_link(name: Encoding.Supervisor)
       handle_request(%{path: "/some/path"})
       assert_receive {:encoding, "/some/path"}
-      assert {:ok, _} = Mutex.lock(MyApp.Mutex, :encoding_server)
+      assert %Mutex.Lock{} = Mutex.await(MyApp.Mutex, :encoding_server)
       assert_receive {:cleaning, "/some/path"}
     end
   end

@@ -91,18 +91,17 @@ defmodule Mutex.MultiTest do
 
     procs =
       Enum.map(spawn_specs, fn {name, keys} ->
-        {name, spawn_monitor(fn -> with_lock_loop(pid, name, keys, n_iter) end)}
+        task = Task.async(fn -> with_lock_loop(pid, name, keys, n_iter) end)
+        {name, task}
       end)
 
-    Enum.each(procs, fn {name, {pid, mref}} ->
-      receive do
-        {:DOWN, ^mref, :process, ^pid, ^name} -> :ok
-      end
+    Enum.each(procs, fn {name, task} ->
+      assert ^name = Task.await(task, :infinity)
     end)
   end
 
   def with_lock_loop(_mutex, name, _keys, 0) do
-    exit(name)
+    name
   end
 
   def with_lock_loop(mutex, name, keys, iterations) when iterations > 0 do

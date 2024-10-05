@@ -1,5 +1,6 @@
 defmodule Mutex.Test.Utils do
   require Logger
+  require ExUnit.Assertions
 
   def rand_mod do
     :"Elixir.Test_Mutex_#{:erlang.unique_integer([:positive])}"
@@ -112,5 +113,13 @@ defmodule Mutex.Test.Utils do
     after
       5000 -> ExUnit.Assertions.flunk("process #{inspect(pid)} did not exit")
     end
+  end
+
+  @doc """
+  Ensures that the exception message can be generated
+  """
+  def ensure_message(e) do
+    ExUnit.Assertions.refute(Exception.message(e) =~ "failed to produce a message with")
+    e
   end
 end
