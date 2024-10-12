@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.0] - 2024-10-12
+
+### Features
+
+- Added support for process name registration
+- [**breaking**] Removed mutex metadata
+- [**breaking**] Options in start_link must now always be a Keyword
+- Removed need to cleanup state every N seconds
+- Added the give_away function to transfer lock ownership
+- Renamed 'under' functions to 'with_lock'
+- [**breaking**] Releasing a lock is now a synchronous operation
+
+### Miscellaneous Tasks
+
+- Fix github workflow for tests
+
+### Testing
+
+- Splitted tests for speed
+
 ## [2.0.0] - 2024-01-25
 
 ### Miscellaneous Tasks
