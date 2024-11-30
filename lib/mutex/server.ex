@@ -117,6 +117,10 @@ defmodule Mutex.Server do
     {:noreply, clear_owner(state, pid, :DOWN)}
   end
 
+  def handle_info({_, :"$notifications_sent"}, state) do
+    {:noreply, state}
+  end
+
   # -- State ------------------------------------------------------------------
 
   defp set_lock(%S{locks: locks, owns: owns} = state, key, pid) do
@@ -189,20 +193,15 @@ defmodule Mutex.Server do
     :ok
   end
 
-  defp notify_waiters(froms, key) do
-    # Use a task so we can sleep between notifications for waiters are called in
-    # order with a chance for each one to send lock msg befor the following
-    # others.
-    Task.start_link(fn ->
-      froms
-      |> Enum.reverse()
-      |> Enum.map(fn from ->
-        GenServer.reply(from, {:available, key})
-        Process.sleep(50)
-      end)
-    end)
+  defp notify_waiters(waiters, key) do
+    # The first waiter is the last in the list.
+    waiters = :lists.reverse(waiters)
 
-    :ok
+    :ok = Enum.each(waiters, &notify_waiter(&1, key))
+  end
+
+  defp notify_waiter(from, key) do
+    :ok = GenServer.reply(from, {:available, key})
   end
 
   defp check_ownership_all(_, [], _), do: :ok

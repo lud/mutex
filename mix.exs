@@ -16,6 +16,7 @@ defmodule Mutex.Mixfile do
       name: "Mutex",
       package: package(),
       versioning: versioning(),
+      dialyzer: dialyzer(),
       elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
@@ -73,6 +74,14 @@ defmodule Mutex.Mixfile do
         end,
         add: "CHANGELOG.md"
       ]
+    ]
+  end
+
+  defp dialyzer do
+    [
+      flags: [:unmatched_returns, :error_handling, :unknown, :extra_return],
+      list_unused_filters: true,
+      plt_local_path: "_build/plts"
     ]
   end
 end
