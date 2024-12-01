@@ -85,4 +85,10 @@ defmodule Mutex.Mixfile do
       plt_local_path: "_build/plts"
     ]
   end
+
+  def cli do
+    [
+      preferred_envs: [dialyzer: :test]
+    ]
+  end
 end
