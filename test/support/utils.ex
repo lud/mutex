@@ -119,7 +119,8 @@ defmodule Mutex.Test.Utils do
   Ensures that the exception message can be generated
   """
   def ensure_message(e) do
-    ExUnit.Assertions.refute(Exception.message(e) =~ "failed to produce a message with")
-    e
+    if Exception.message(e) =~ "failed to produce a message with" do
+      ExUnit.Assertions.flunk("Exception cannot produce a message: #{inspect(e)}")
+    end
   end
 end

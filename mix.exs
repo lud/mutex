@@ -81,6 +81,7 @@ defmodule Mutex.Mixfile do
     [
       flags: [:unmatched_returns, :error_handling, :unknown, :extra_return],
       list_unused_filters: true,
+      plt_add_apps: [:ex_unit],
       plt_local_path: "_build/plts"
     ]
   end
