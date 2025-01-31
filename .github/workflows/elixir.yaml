@@ -2,13 +2,6 @@ name: Elixir Checks
 
 on:
   push:
-    branches:
-      - main
-      - feat/**
-      - f/**
-      - chore/**
-      - fix/**
-      - ci/**
   pull_request:
     branches:
       - main
@@ -29,11 +22,10 @@ jobs:
 
     strategy:
       matrix:
-        elixir: [1.17.3, 1.16.3]
-        otp: [27.1.2, 26.2.5.5]
-        exclude:
-          - elixir: 1.16.3
-            otp: 27.1.2
+        elixir: ["1.18.1","1.17.3"]
+        otp: ["27.1.2","26.2.5.5"]
+        exclude: []
+
 
     name: "Test ${{matrix.elixir}}-otp-${{matrix.otp}}"
 
@@ -85,7 +77,7 @@ jobs:
       # specific directory from the cache. So we always want to compile all the
       # code. We will also `mix clean` at the end.
       - name: Compile Project
-        run: mix compile --force
+        run: mix compile --force --warnings-as-errors
 
       - name: Run Tests
         run: mix test
