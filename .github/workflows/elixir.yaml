@@ -26,8 +26,8 @@ jobs:
 
     strategy:
       matrix:
-        elixir: ["1.18.1","1.17.3"]
-        otp: ["27.1.2","26.2.5.5"]
+        elixir: ["1.18.3","1.17.3"]
+        otp: ["27.3","26.2.5.9"]
         exclude: []
 
 
@@ -41,31 +41,12 @@ jobs:
           otp-version: ${{matrix.otp}}
           elixir-version: ${{matrix.elixir}}
 
-      - name: Dependencies cache
-        uses: actions/cache@v4
-        id: mix-deps-code
-        with:
-          path: deps
-          key: deps-code-${{ runner.os }}--${{ matrix.otp }}--${{ matrix.elixir }}--${{ hashFiles('mix.lock') }}
-          # For the deps code we can take from any elixir version as the code
-          # source should be the same.
-          restore-keys: |
-            deps-code-${{ runner.os }}--${{ matrix.otp }}--${{ matrix.elixir }}--${{ hashFiles('mix.lock') }}
-            deps-code-${{ runner.os }}--${{ matrix.otp }}--${{ matrix.elixir }}--
-            deps-code-${{ runner.os }}--${{ matrix.otp }}--
-            deps-code-${{ runner.os }}--
-
-      - name: Install Dependencies
-        run: |
-          mix local.rebar --force
-          mix local.hex --force
-          mix deps.get
-
       - name: Dependencies build cache
         uses: actions/cache@v4
-        id: mix-deps-build
+        id: mix-deps
         with:
           path: |
+            deps
             _build
             !_build/plts
           key: deps-build-${{ runner.os }}--${{ matrix.otp }}--${{ matrix.elixir }}--${{ hashFiles('mix.lock') }}
@@ -74,8 +55,11 @@ jobs:
             deps-build-${{ runner.os }}--${{ matrix.otp }}--${{ matrix.elixir }}--${{ hashFiles('mix.lock') }}
             deps-build-${{ runner.os }}--${{ matrix.otp }}--${{ matrix.elixir }}--
 
-      - name: Compile Dependencies
-        run: mix loadpaths
+      - name: Install Dependencies
+        run: |
+          mix local.rebar --force
+          mix local.hex --force
+          mix deps.get
 
       # Use force as we use a template config so we do not want to ignore a
       # specific directory from the cache. So we always want to compile all the
@@ -112,6 +96,6 @@ jobs:
         run: mix dialyzer --no-check --halt-exit-status
 
         # Remove generated application beam files to prevent caching them. We
-        # also use `mix compile --force` to always check the code compiles.
+        # also use `mix compile --force` to always check that the code compiles.
       - name: Clean
         run: mix clean
