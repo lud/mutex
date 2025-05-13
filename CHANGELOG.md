@@ -2,9 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.1] - 2025-05-13
+
+### 🐛 Bug Fixes
+
+- Do not sleep  before notifying multiple waiters that a lock is available
+
+### 🚜 Refactor
+
+- Removed dead code
+
+### ⚙️ Miscellaneous Tasks
+
+- Update dependabot config (#8)
+- Update CI config (#9)
+- Fix dialyzer warning
+- Update dependabot config (#15)
+- Update Elixir Github workflow (#21)
+
 ## [3.0.0] - 2024-10-12
 
-### Features
+### 🚀 Features
 
 - Added support for process name registration
 - [**breaking**] Removed mutex metadata
@@ -14,17 +32,17 @@ All notable changes to this project will be documented in this file.
 - Renamed 'under' functions to 'with_lock'
 - [**breaking**] Releasing a lock is now a synchronous operation
 
-### Miscellaneous Tasks
-
-- Fix github workflow for tests
-
-### Testing
+### 🧪 Testing
 
 - Splitted tests for speed
 
+### ⚙️ Miscellaneous Tasks
+
+- Fix github workflow for tests
+
 ## [2.0.0] - 2024-01-25
 
-### Miscellaneous Tasks
+### ⚙️ Miscellaneous Tasks
 
 - Upgrade to elixir version 1.15
 
