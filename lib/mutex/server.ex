@@ -117,10 +117,6 @@ defmodule Mutex.Server do
     {:noreply, clear_owner(state, pid, :DOWN)}
   end
 
-  def handle_info({_, :"$notifications_sent"}, state) do
-    {:noreply, state}
-  end
-
   # -- State ------------------------------------------------------------------
 
   defp set_lock(%S{locks: locks, owns: owns} = state, key, pid) do
