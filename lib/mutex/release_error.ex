@@ -14,8 +14,8 @@ defmodule Mutex.ReleaseError do
     add_reason(base, reason)
   end
 
-  defp add_reason(e, {:bad_owner = c, _key, owner}), do: %__MODULE__{e | cause: c, owner: owner}
-  defp add_reason(e, {:unknown_key = c, _key}), do: %__MODULE__{e | cause: c}
+  defp add_reason(%__MODULE__{} = e, {:bad_owner = c, _key, owner}), do: %{e | cause: c, owner: owner}
+  defp add_reason(%__MODULE__{} = e, {:unknown_key = c, _key}), do: %{e | cause: c}
 
   def message(e) do
     %{lock_type: lock_type, key_or_keys: key_or_keys, owner: owner, releaser: releaser, action: action, cause: cause} =
