@@ -142,7 +142,7 @@ defmodule Mutex do
   [deadlocks section](https://hexdocs.pm/mutex/readme.html#avoiding-deadlocks).
   """
   @spec await_all(mutex :: name, keys :: [key]) :: Lock.t()
-  def await_all(mutex, keys) when is_list(keys) and length(keys) > 0 do
+  def await_all(mutex, [_ | _] = keys) do
     sorted = Enum.sort(keys)
     await_sorted(mutex, sorted, :infinity, [])
   end

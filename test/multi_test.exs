@@ -50,6 +50,10 @@ defmodule Mutex.MultiTest do
     assert %Lock{} = Mutex.await(@mut, :multi_1, :infinity)
   end
 
+  test "accepts a single key" do
+    assert %Mutex.Lock{keys: [:hello], type: :multi} = Mutex.await_all(@mut, [:hello])
+  end
+
   # spawns a process that loop forever and locks <key> for <tin> time, release,
   # wait for <tout> time and start over
   defp spawn_single_locker(mutex, key, tin \\ 200, tout \\ 150) do
