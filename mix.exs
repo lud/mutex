@@ -2,7 +2,7 @@ defmodule Mutex.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/lud/mutex"
-  @version "3.0.2"
+  @version "3.0.3"
 
   def project do
     [
