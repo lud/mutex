@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.4] - 2026-05-10
+
+### ⚙️ Miscellaneous Tasks
+
+- Maintenance release (deps, docs)
+
 ## [3.0.3] - 2026-02-03
 
 ### ⚙️ Miscellaneous Tasks
