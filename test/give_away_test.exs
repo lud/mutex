@@ -2,7 +2,6 @@ defmodule Mutex.GiveAwayTest do
   alias Mutex.Lock
   alias Mutex.ReleaseError
   import Mutex.Test.Utils
-  require Logger
   use ExUnit.Case, async: true
 
   @moduletag :capture_log

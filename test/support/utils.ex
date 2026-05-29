@@ -1,6 +1,5 @@
 defmodule Mutex.Test.Utils do
   require Logger
-  require ExUnit.Assertions
 
   def rand_mod do
     :"Elixir.Test_Mutex_#{:erlang.unique_integer([:positive])}"

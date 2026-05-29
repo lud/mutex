@@ -1,5 +1,4 @@
 defmodule Mutex.ExampleTest do
-  require Logger
   use ExUnit.Case, async: true
 
   @moduletag :capture_log

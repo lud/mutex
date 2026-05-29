@@ -1,7 +1,6 @@
 defmodule Mutex.MultiTest do
   alias Mutex.Lock
   import Mutex.Test.Utils
-  require Logger
   use ExUnit.Case, async: true
 
   @moduletag :capture_log
