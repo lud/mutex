@@ -1,8 +1,8 @@
-install:
+_mix_deps:
   mix deps.get
 
 format:
-  mix format
+  mix format --migrate
 
 _git_status:
     git status
@@ -16,4 +16,10 @@ dialyzer:
 credo:
   mix credo
 
-check: install format test-cover credo dialyzer _git_status
+readme:
+  mix rdmx.update README.md
+
+_libdev_check:
+  mix libdev.check
+
+check: _mix_deps format readme _libdev_check _git_status

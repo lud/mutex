@@ -14,6 +14,11 @@ defmodule Mutex.Mixfile do
       deps: deps(),
       docs: docs(),
       name: "Mutex",
+      description:
+        "This package implements a simple mutex as a GenServer. " <>
+          "It allows to lock keys and handles locking multiple keys " <>
+          "without deadlocks.",
+      source_url: @source_url,
       package: package(),
       versioning: versioning(),
       dialyzer: dialyzer(),
@@ -28,18 +33,14 @@ defmodule Mutex.Mixfile do
 
   defp deps do
     [
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
-      {:dialyxir, "~> 1.2", only: [:dev, :test], runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      # Dev
+      {:libdev, ">= 0.0.0", only: [:dev, :test], runtime: false},
+      {:readmix, ">= 0.0.0", only: [:dev, :test], runtime: false}
     ]
   end
 
   defp package() do
     [
-      description:
-        "This package implements a simple mutex as a GenServer. " <>
-          "It allows to lock keys and handles locking multiple keys " <>
-          "without deadlocks.",
       licenses: ["MIT"],
       maintainers: ["Ludovic Demblans <ludovic@demblans.com>"],
       links: %{"GitHub" => @source_url}

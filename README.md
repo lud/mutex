@@ -1,9 +1,14 @@
 # A simple mutex for Elixir
 
-[![Module Version](https://img.shields.io/hexpm/v/mutex.svg)](https://hex.pm/packages/mutex)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/mutex/)
-[![License](https://img.shields.io/hexpm/l/mutex.svg)](https://github.com/lud/mutex/blob/master/LICENSE.md)
-[![Last Updated](https://img.shields.io/github/last-commit/lud/mutex.svg)](https://github.com/lud/mutex/commits/main)
+<!-- rdmx :badges
+    hexpm         : "mutex?color=4e2a8e"
+    github_action : "lud/mutex/elixir.yaml?label=CI&branch=main"
+    license       : mutex
+    -->
+[![hex.pm Version](https://img.shields.io/hexpm/v/mutex?color=4e2a8e)](https://hex.pm/packages/mutex)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/lud/mutex/elixir.yaml?label=CI&branch=main)](https://github.com/lud/mutex/actions/workflows/elixir.yaml?query=branch%3Amain)
+[![License](https://img.shields.io/hexpm/l/mutex.svg)](https://hex.pm/packages/mutex)
+<!-- rdmx /:badges -->
 
 `Mutex` is a lightweight mutex or "locks" implementation that fits under your
 supervision tree and allows processes to work on shared ressources one by one.
@@ -35,13 +40,15 @@ The documentation is hosted on [Hexdocs](https://hexdocs.pm/mutex/).
 This package can be installed by adding `:mutex` to your list of dependencies in
 `mix.exs`:
 
+<!-- rdmx :app_dep vsn:$app_vsn -->
 ```elixir
-def deps do
+defp deps do
   [
     {:mutex, "~> 3.0"},
   ]
 end
 ```
+<!-- rdmx /:app_dep -->
 
 
 ## Basic usage
