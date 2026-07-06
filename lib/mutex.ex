@@ -132,7 +132,7 @@ defmodule Mutex do
 
   @doc """
   Awaits multiple keys at once. Returns once all the keys have been locked,
-  timeout is `:infinity`.
+  timeout is `:infinity`. Keys must be unique.
 
   If two processes are trying to lock `[:user_1, :user_2]` and
   `[:user_2, :user_3]` at the same time, this function ensures that no deadlock
@@ -143,9 +143,21 @@ defmodule Mutex do
   """
   @spec await_all(mutex :: name, keys :: [key]) :: Lock.t()
   def await_all(mutex, [_ | _] = keys) do
+    raise_duplicates!(keys, [])
     sorted = Enum.sort(keys)
     await_sorted(mutex, sorted, :infinity, [])
   end
+
+  @spec raise_duplicates!(term, term) :: :ok | no_return()
+  defp raise_duplicates!([h | t], acc) do
+    if h in acc do
+      raise ArgumentError, "keys must be unique, duplicate key: #{inspect(h)}"
+    end
+
+    raise_duplicates!(t, [h | acc])
+  end
+
+  defp raise_duplicates!([], _acc), do: :ok
 
   # Waiting multiple keys and avoiding deadlocks. It is enough to simply lock
   # the keys sorted. @optimize send all keys to the server and get {locked,
@@ -232,7 +244,7 @@ defmodule Mutex do
 
   @doc """
   Awaits a lock for the given keys, executes the given fun and
-  releases the lock immediately.
+  releases the lock immediately. Keys must be unique.
 
   If an exeption is raised or thrown in the fun, the lock is
   automatically released.

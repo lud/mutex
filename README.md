@@ -201,6 +201,9 @@ shall have been locked all at once.**
 This simple rule is enough to be free from deadlocks, and `Mutex.await_all/2` is
 the simplest way to respect that rule.
 
+Note that keys must be unique. In this example, if you ever need the buyer to buy from
+itself, keys should be de-duped using `Enum.uniq/1`.
+
 ```elixir
 # Do this instead
 

@@ -53,6 +53,59 @@ defmodule Mutex.MultiTest do
     assert %Mutex.Lock{keys: [:hello], type: :multi} = Mutex.await_all(@mut, [:hello])
   end
 
+  describe "rejecting duplicate keys" do
+    # If the caller passes the same key twice, awaiting all keys would make the
+    # caller await a key it just locked itself, deadlocking forever. This must
+    # raise instead. The timeout guards against a regression to the deadlock
+    # behavior.
+    @describetag timeout: 5_000
+
+    test "await_all raises on duplicate keys" do
+      err =
+        assert_raise ArgumentError, fn ->
+          Mutex.await_all(@mut, [:k1, :dup, :dup])
+        end
+
+      assert err.message =~ "duplicate"
+      assert err.message =~ ":dup"
+    end
+
+    test "no key is locked when duplicates are rejected" do
+      # The raise must happen in the caller, before any key is locked, so
+      # another process can immediately lock all of the given keys.
+      assert_raise ArgumentError, fn ->
+        Mutex.await_all(@mut, [:x, :y, :x])
+      end
+
+      task =
+        Task.async(fn ->
+          {Mutex.lock(@mut, :x), Mutex.lock(@mut, :y)}
+        end)
+
+      assert {{:ok, %Lock{}}, {:ok, %Lock{}}} = Task.await(task)
+    end
+
+    test "with_lock_all raises on duplicate keys without running the fun" do
+      test_pid = self()
+
+      err =
+        assert_raise ArgumentError, fn ->
+          Mutex.with_lock_all(@mut, [:dup, :dup], fn -> send(test_pid, :fun_ran) end)
+        end
+
+      assert err.message =~ "duplicate"
+      assert err.message =~ ":dup"
+      refute_received :fun_ran
+    end
+
+    test "keys are compared with strict equality" do
+      # 1 and 1.0 compare as equal with ==/2 but are distinct lock keys, as
+      # keys are stored in a map. They must not be treated as duplicates.
+      assert %Lock{type: :multi, keys: keys} = Mutex.await_all(@mut, [1, 1.0])
+      assert 2 == length(keys)
+    end
+  end
+
   # spawns a process that loop forever and locks <key> for <tin> time, release,
   # wait for <tout> time and start over
   defp spawn_single_locker(mutex, key, tin \\ 200, tout \\ 150) do
