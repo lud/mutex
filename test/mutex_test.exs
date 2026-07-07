@@ -202,7 +202,9 @@ defmodule MutexTest do
 
     lock = wack.()
 
-    assert_raise ReleaseError, fn -> Mutex.release(@mut, lock) end
+    assert {:error, %ReleaseError{} = err} = Mutex.release(@mut, lock)
+    ensure_message(err)
+    assert_raise ReleaseError, fn -> Mutex.release!(@mut, lock) end
     assert {:error, %LockError{key: :not_mine, cause: {:locked, ^pid}}} = Mutex.lock(@mut, :not_mine)
   end
 
@@ -222,7 +224,19 @@ defmodule MutexTest do
   end
 
   test "can't release a key if it does not exist" do
-    assert_raise ReleaseError, fn -> Mutex.release(@mut, %Lock{type: :single, key: :unregistered_key}) end
+    lock = %Lock{type: :single, key: :unregistered_key}
+    assert {:error, %ReleaseError{} = err} = Mutex.release(@mut, lock)
+    ensure_message(err)
+    assert_raise ReleaseError, fn -> Mutex.release!(@mut, lock) end
+  end
+
+  test "release! releases the lock and raises on error" do
+    assert {:ok, lock} = Mutex.lock(@mut, :bang_release)
+    assert :ok = Mutex.release!(@mut, lock)
+
+    # Releasing again fails, the key is not locked anymore.
+    assert_raise ReleaseError, fn -> Mutex.release!(@mut, lock) end
+    assert {:ok, _} = Mutex.lock(@mut, :bang_release)
   end
 
   test "can't release a key if not owner or if not registered (async)" do
@@ -239,7 +253,8 @@ defmodule MutexTest do
     assert :ok = Mutex.release(@mut, %Lock{type: :single, key: :k1})
 
     # Cannot release both k1,k2
-    assert_raise ReleaseError, fn -> Mutex.release(@mut, lock) end
+    assert {:error, %ReleaseError{}} = Mutex.release(@mut, lock)
+    assert_raise ReleaseError, fn -> Mutex.release!(@mut, lock) end
 
     # Still owning k2
     this = self()

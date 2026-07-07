@@ -61,6 +61,18 @@ defmodule Mutex.NameRegistrationTest do
     assert :no = Mutex.register_name({@mut, :contested}, self())
   end
 
+  test "unregistering is idempotent" do
+    # As :global and Registry, unregistering always returns :ok, even for a
+    # name that is not registered. Cleanup code can call it blindly.
+    assert :yes = Mutex.register_name({@mut, :transient}, self())
+    assert :ok = Mutex.unregister_name({@mut, :transient})
+    assert :ok = Mutex.unregister_name({@mut, :transient})
+    assert :ok = Mutex.unregister_name({@mut, :never_registered})
+
+    # The key is free after unregistration.
+    assert {:ok, _} = Mutex.lock(@mut, :transient)
+  end
+
   test "can start a proces with a name" do
     mod = rand_mod()
 

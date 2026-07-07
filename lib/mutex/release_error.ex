@@ -1,6 +1,15 @@
 defmodule Mutex.ReleaseError do
   @moduledoc false
 
+  @type t :: %__MODULE__{
+          lock_type: :single | :multi,
+          key_or_keys: Mutex.key() | [Mutex.key()],
+          owner: pid | nil,
+          releaser: pid,
+          action: :release | :give_away,
+          cause: :bad_owner | :unknown_key
+        }
+
   defexception [:lock_type, :key_or_keys, :owner, :releaser, :action, :cause]
 
   def of(reason, lock_type, key_or_keys, action, releaser) do

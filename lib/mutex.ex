@@ -233,13 +233,23 @@ defmodule Mutex do
 
   @doc """
   Releases the given lock synchronously.
-
   """
-  @spec release(mutex :: name, lock :: Lock.t()) :: :ok
+  @spec release(mutex :: name, lock :: Lock.t()) :: {:ok, ReleaseError.t()}
   def release(mutex, lock) do
     case call_release(mutex, lock) do
       :ok -> :ok
-      {:error, reason} -> raise ReleaseError.of(reason, lock.type, lock_to_key_or_keys(lock), :release, self())
+      {:error, reason} -> {:error, ReleaseError.of(reason, lock.type, lock_to_key_or_keys(lock), :release, self())}
+    end
+  end
+
+  @doc """
+  Releases the given lock synchronously.
+  """
+  @spec release(mutex :: name, lock :: Lock.t()) :: :ok
+  def release!(mutex, lock) do
+    case release(mutex, lock) do
+      :ok -> :ok
+      {:error, e} -> raise e
     end
   end
 
@@ -325,7 +335,7 @@ defmodule Mutex do
   defp apply_with_lock(mutex, lock, fun) do
     fun.(lock)
   after
-    release(mutex, lock)
+    release!(mutex, lock)
   end
 
   @doc "Alias for `with_lock/4`."
@@ -395,7 +405,8 @@ defmodule Mutex do
   @doc false
   @spec unregister_name({mutex :: name, key :: key}) :: :ok
   def unregister_name({mutex, key}) do
-    release(mutex, %Lock{type: :single, key: key})
+    _ = release(mutex, %Lock{type: :single, key: key})
+    :ok
   end
 
   @doc false
