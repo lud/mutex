@@ -46,7 +46,7 @@ defmodule Mutex.ExampleTest do
 
     def handle_request(encoding_request) do
       case Mutex.lock(MyApp.Mutex, :encoding_server) do
-        {:error, :busy} ->
+        {:error, %Mutex.LockError{cause: {:locked, _owner_pid}}} ->
           "encoding not available"
 
         {:ok, lock} ->

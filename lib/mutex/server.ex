@@ -34,11 +34,16 @@ defmodule Mutex.Server do
   @impl true
   def handle_call({:lock, key, pid, wait?}, from, state) do
     case Map.fetch(state.locks, key) do
-      {:ok, _owner} ->
+      {:ok, ^pid} when wait? ->
+        # Owner of the lock tries to lock it twice. If it wants to wait, that is
+        # a deadlock
+        {:reply, {:error, :self_deadlock}, state}
+
+      {:ok, owner} ->
         if wait? do
           {:noreply, set_waiter(state, key, from)}
         else
-          {:reply, {:error, :busy}, state}
+          {:reply, {:error, {:locked, owner}}, state}
         end
 
       :error ->

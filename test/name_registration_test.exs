@@ -37,6 +37,30 @@ defmodule Mutex.NameRegistrationTest do
     assert nil == GenServer.whereis({:via, Mutex, {@mut, :i_will_exit}})
   end
 
+  test "cannot register a name whose key is already locked" do
+    # :gen checks whereis_name/1 before spawning a process, so starting a
+    # process under an already-registered name returns :already_started
+    # without calling register_name/2. The register_name/2 refusal path only
+    # runs when the key is locked while whereis_name/1 reported no live
+    # owner (race, or key locked by a non-registered process right in
+    # between), so we exercise the callback directly.
+    {ack, wack} = awack()
+
+    xspawn(fn ->
+      Mutex.lock!(@mut, :contested)
+      ack.()
+      hang()
+    end)
+
+    wack.()
+    assert :no = Mutex.register_name({@mut, :contested}, self())
+  end
+
+  test "fails when already registered by self" do
+    assert :yes = Mutex.register_name({@mut, :contested}, self())
+    assert :no = Mutex.register_name({@mut, :contested}, self())
+  end
+
   test "can start a proces with a name" do
     mod = rand_mod()
 
@@ -51,7 +75,7 @@ defmodule Mutex.NameRegistrationTest do
     assert {:ok, pid} = GenServer.start_link(mod, [], name: via)
 
     # server will have a lock
-    assert {:error, :busy} = Mutex.lock(@mut, :gs)
+    assert {:error, %Mutex.LockError{cause: {:locked, ^pid}}} = Mutex.lock(@mut, :gs)
     assert {:error, {:already_started, ^pid}} = GenServer.start_link(mod, [], name: via)
 
     # on stop the lock is freed (this does not need uregister_name impl, it's
@@ -81,7 +105,7 @@ defmodule Mutex.NameRegistrationTest do
 
     # when initializing the process has been registered
     sync.(:initializing)
-    assert {:error, :busy} = Mutex.lock(@mut, key)
+    assert {:error, %Mutex.LockError{cause: {:locked, _}}} = Mutex.lock(@mut, key)
 
     # now we will let the gen server init return stop
     sync.(:tested_busy)
@@ -116,7 +140,7 @@ defmodule Mutex.NameRegistrationTest do
 
     # when initializing the process has been registered
     sync.(:initializing)
-    assert {:error, :busy} = Mutex.lock(@mut, key)
+    assert {:error, %Mutex.LockError{cause: {:locked, _}}} = Mutex.lock(@mut, key)
 
     # now we will let the gen server init return stop
     sync.(:tested_busy)

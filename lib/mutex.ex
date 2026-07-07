@@ -17,7 +17,7 @@ defmodule Mutex do
   @type name :: GenServer.server()
 
   @typedoc "A key can be any term."
-  @type key :: any
+  @type key :: term
 
   @doc """
   Starts a mutex with no process linking. Given options are passed as options
@@ -57,14 +57,35 @@ defmodule Mutex do
   end
 
   @doc """
-  Attemps to lock a resource on the mutex and returns immediately with the
-  result, which is either a `Mutex.Lock` structure or `{:error, :busy}`.
+  Attempts to lock a resource on the mutex and returns immediately with the
+  result.
+
+  When the key is already locked, the returned `Mutex.LockError` carries the
+  owner pid in its `:cause` field. This lets callers tell whether they already
+  own the key themselves:
+
+  ```elixir
+  case Mutex.lock(mutex, key) do
+    {:ok, lock} ->
+      handle_resource(lock)
+
+    {:error, %Mutex.LockError{cause: {:locked, owner}}} when owner == self() ->
+      :already_mine
+
+    {:error, %Mutex.LockError{}} ->
+      :taken
+  end
+  ```
+
+  The owner pid is the owner at the time the mutex handled the request. When
+  that pid is `self()` the information stays accurate, as a lock is only
+  released or given away by its owner.
   """
-  @spec lock(name :: name, key :: key) :: {:ok, Lock.t()} | {:error, :busy}
+  @spec lock(name :: name, key :: key) :: {:ok, Lock.t()} | {:error, LockError.t()}
   def lock(mutex, key) do
     case GenServer.call(mutex, {:lock, key, self(), false}) do
       :ok -> {:ok, key_to_lock(key)}
-      {:error, :busy} -> {:error, :busy}
+      {:error, {:locked, _} = cause} -> {:error, %LockError{key: key, cause: cause}}
     end
   end
 
@@ -73,14 +94,14 @@ defmodule Mutex do
   defp lock_to_key_or_keys(%Lock{type: :multi, keys: keys}), do: keys
 
   @doc """
-  Attemps to lock a resource on the mutex and returns immediately with the lock
-  or raises an exception if the key is already locked.
+  Attempts to lock a resource on the mutex and returns immediately with the
+  lock, or raises a `Mutex.LockError` if the key is already locked.
   """
   @spec lock!(name :: name, key :: key) :: Lock.t()
   def lock!(mutex, key) do
     case lock(mutex, key) do
       {:ok, lock} -> lock
-      {:error, :busy} -> raise LockError, key: key
+      {:error, %LockError{} = e} -> raise e
     end
   end
 
@@ -99,6 +120,9 @@ defmodule Mutex do
   Default timeout is `5000` milliseconds. If the timeout is reached, the caller
   process exits as in `GenServer.call/3`.  More information in the
   [timeouts](https://hexdocs.pm/elixir/GenServer.html#call/3-timeouts) section.
+
+  Raises a `Mutex.LockError` when the calling process already owns the key,
+  since waiting for its own key to be released would deadlock.
   """
   @spec await(mutex :: name, key :: key, timeout :: timeout) :: Lock.t()
   def await(mutex, key, timeout \\ 5000)
@@ -108,15 +132,15 @@ defmodule Mutex do
   end
 
   def await(mutex, key, :infinity) do
-    case GenServer.call(mutex, {:lock, key, self(), true}, :infinity) do
+    case safe_await_infinity(mutex, key) do
       # lock acquired
       :ok -> key_to_lock(key)
-      {:available, ^key} -> await(mutex, key, :infinity)
+      {:error, :self_deadlock} -> raise LockError, cause: :self_deadlock, key: key
     end
   end
 
   def await(mutex, key, timeout) do
-    now = System.system_time(:millisecond)
+    now = System.monotonic_time(:millisecond)
 
     case GenServer.call(mutex, {:lock, key, self(), true}, timeout) do
       :ok ->
@@ -124,57 +148,86 @@ defmodule Mutex do
 
       {:available, ^key} ->
         expires_at = now + timeout
-        now2 = System.system_time(:millisecond)
+        now2 = System.monotonic_time(:millisecond)
         timeout = expires_at - now2
         await(mutex, key, timeout)
+
+      {:error, :self_deadlock} ->
+        raise LockError, cause: :self_deadlock, key: key
+    end
+  end
+
+  defp safe_await_infinity(mutex, key) do
+    case GenServer.call(mutex, {:lock, key, self(), true}, :infinity) do
+      :ok -> :ok
+      {:available, ^key} -> safe_await_infinity(mutex, key)
+      {:error, :self_deadlock} = err -> err
     end
   end
 
   @doc """
   Awaits multiple keys at once. Returns once all the keys have been locked,
-  timeout is `:infinity`. Keys must be unique.
+  timeout is `:infinity`.
 
-  If two processes are trying to lock `[:user_1, :user_2]` and
-  `[:user_2, :user_3]` at the same time, this function ensures that no deadlock
-  can happen and that one process will eventually lock all the keys.
+  If two processes are trying to lock `[:user_1, :user_2]` and `[:user_2,
+  :user_3]` at the same time, this function ensures that no deadlock can happen
+  and that one process will eventually lock all the keys.
 
-  More information at the end of the
-  [deadlocks section](https://hexdocs.pm/mutex/readme.html#avoiding-deadlocks).
+  More information at the end of the [deadlocks
+  section](https://hexdocs.pm/mutex/readme.html#avoiding-deadlocks).
+
+  Keys must be unique, otherwise an `ArgumentError` is raised. When keys are
+  built dynamically and may collide, deduplicate them first, for instance with
+  `Enum.uniq/1`.
+
+  Raises a `Mutex.LockError` when the calling process already owns one of the
+  keys. In that case, the keys acquired during the call are released before
+  raising.
   """
   @spec await_all(mutex :: name, keys :: [key]) :: Lock.t()
   def await_all(mutex, [_ | _] = keys) do
-    raise_duplicates!(keys, [])
+    raise_duplicated_keys!(keys, [])
     sorted = Enum.sort(keys)
     await_sorted(mutex, sorted, :infinity, [])
   end
 
-  @spec raise_duplicates!(term, term) :: :ok | no_return()
-  defp raise_duplicates!([h | t], acc) do
+  @spec raise_duplicated_keys!([key], [key]) :: :ok | no_return()
+  defp raise_duplicated_keys!([h | t], acc) do
     if h in acc do
       raise ArgumentError, "keys must be unique, duplicate key: #{inspect(h)}"
     end
 
-    raise_duplicates!(t, [h | acc])
+    raise_duplicated_keys!(t, [h | acc])
   end
 
-  defp raise_duplicates!([], _acc), do: :ok
+  defp raise_duplicated_keys!([], _acc), do: :ok
 
   # Waiting multiple keys and avoiding deadlocks. It is enough to simply lock
   # the keys sorted. @optimize send all keys to the server and get {locked,
   # busies} as reply, then start over with the busy ones
 
-  defp await_sorted(mutex, [last | []], :infinity, locked_keys) do
-    %Lock{} = await(mutex, last, :infinity)
-    keys_to_multilock(:lists.reverse([last | locked_keys]))
+  defp await_sorted(_mutex, [], :infinity, locked_keys) do
+    keys_to_multilock(:lists.reverse(locked_keys))
   end
 
   defp await_sorted(mutex, [key | keys], :infinity, locked_keys) do
-    _lock = await(mutex, key, :infinity)
-    await_sorted(mutex, keys, :infinity, [key | locked_keys])
+    case safe_await_infinity(mutex, key) do
+      :ok ->
+        await_sorted(mutex, keys, :infinity, [key | locked_keys])
+
+      {:error, :self_deadlock} ->
+        await_all_failure(mutex, %LockError{key: key, cause: :self_deadlock}, locked_keys)
+    end
   end
 
   defp keys_to_multilock(keys),
     do: %Lock{type: :multi, keys: keys}
+
+  @spec await_all_failure(name, Exception.t(), [key]) :: no_return()
+  defp await_all_failure(mutex, error, keys) do
+    :ok = call_release(mutex, %Lock{type: :multi, keys: keys})
+    raise error
+  end
 
   @doc """
   Releases the given lock synchronously.
@@ -220,15 +273,17 @@ defmodule Mutex do
   end
 
   @doc """
-  Awaits a lock for the given key, executes the given fun and releases
-  the lock immediately.
+  Awaits a lock for the given key, executes the given fun and releases the lock
+  immediately.
 
-  If an exeption is raised or thrown in the fun, the lock is
-  automatically released.
+  If an exception is raised or thrown in the fun, the lock is automatically
+  released.
 
-  If a function of arity 1 is given, it will be passed the lock.
-  Otherwise the arity must be 0. You should not manually release the
-  lock within the function.
+  If a function of arity 1 is given, it will be passed the lock. Otherwise the
+  arity must be 0. You should not manually release the lock within the function.
+
+  The lock is awaited as in `await/3`, with the same timeout and error
+  behaviors.
   """
   @doc since: "3.0.0"
   @spec with_lock(mutex :: name, key :: key, timeout :: timeout, fun :: (-> any) | (Lock.t() -> any)) :: any
@@ -243,15 +298,17 @@ defmodule Mutex do
   end
 
   @doc """
-  Awaits a lock for the given keys, executes the given fun and
-  releases the lock immediately. Keys must be unique.
+  Awaits a lock for the given keys, executes the given fun and releases the lock
+  immediately.
 
-  If an exeption is raised or thrown in the fun, the lock is
-  automatically released.
+  If an exception is raised or thrown in the fun, the lock is automatically
+  released.
 
-  If a function of arity 1 is given, it will be passed the lock.
-  Otherwise the arity must be 0. You should not manually release the
-  lock within the function.
+  If a function of arity 1 is given, it will be passed the lock. Otherwise the
+  arity must be 0. You should not manually release the lock within the function.
+
+  The keys are awaited as in `await_all/2`, with the same unique keys
+  requirement and error behaviors.
   """
   @doc since: "3.0.0"
   @spec with_lock_all(mutex :: name, keys :: [key], fun :: (-> any) | (Lock.t() -> any)) :: any
@@ -324,12 +381,12 @@ defmodule Mutex do
   @doc false
   @spec register_name({mutex :: name, key :: key}, pid) :: :yes | :no
   def register_name({mutex, key}, pid) do
-    # Just support registering self for now
     true = self() == pid
 
+    # As in :global, no special case when the name owner is already self()
     case Mutex.lock(mutex, key) do
       {:ok, _lock} -> :yes
-      {:error, :busy} -> :no
+      {:error, %LockError{cause: {:locked, _}}} -> :no
     end
   end
 

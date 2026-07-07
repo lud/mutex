@@ -234,7 +234,7 @@ send an HTTP response in a timely fashion.
 ```elixir
 def handle_request(encoding_request) do
   case Mutex.lock(MyApp.Mutex, :encoding_server) do
-    {:error, :busy} ->
+    {:error, %Mutex.LockError{}} ->
       "encoding not available"
 
     {:ok, lock} ->

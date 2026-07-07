@@ -1,9 +1,11 @@
 defmodule Mutex.MultiTest do
   alias Mutex.Lock
+  alias Mutex.LockError
   import Mutex.Test.Utils
   use ExUnit.Case, async: true
 
   @moduletag :capture_log
+  @moduletag timeout: 5000
   @mut rand_mod()
 
   setup do
@@ -58,7 +60,6 @@ defmodule Mutex.MultiTest do
     # caller await a key it just locked itself, deadlocking forever. This must
     # raise instead. The timeout guards against a regression to the deadlock
     # behavior.
-    @describetag timeout: 5_000
 
     test "await_all raises on duplicate keys" do
       err =
@@ -72,17 +73,13 @@ defmodule Mutex.MultiTest do
 
     test "no key is locked when duplicates are rejected" do
       # The raise must happen in the caller, before any key is locked, so
-      # another process can immediately lock all of the given keys.
+      # all of the given keys can immediately be locked.
       assert_raise ArgumentError, fn ->
         Mutex.await_all(@mut, [:x, :y, :x])
       end
 
-      task =
-        Task.async(fn ->
-          {Mutex.lock(@mut, :x), Mutex.lock(@mut, :y)}
-        end)
-
-      assert {{:ok, %Lock{}}, {:ok, %Lock{}}} = Task.await(task)
+      assert {:ok, %Lock{}} = Mutex.lock(@mut, :x)
+      assert {:ok, %Lock{}} = Mutex.lock(@mut, :y)
     end
 
     test "with_lock_all raises on duplicate keys without running the fun" do
@@ -103,6 +100,38 @@ defmodule Mutex.MultiTest do
       # keys are stored in a map. They must not be treated as duplicates.
       assert %Lock{type: :multi, keys: keys} = Mutex.await_all(@mut, [1, 1.0])
       assert 2 == length(keys)
+    end
+  end
+
+  describe "self-lock detection with multiple keys" do
+    # See the "self-lock detection" tests in mutex_test.exs for single keys.
+    # The timeout guards against a regression to the deadlock behavior.
+
+    test "await_all raises on a partially owned keys list, leaving no partial locks" do
+      this = self()
+
+      # :zzz sorts last, so await_all acquires :aaa before detecting the
+      # self-lock on :zzz. The raise must not leak the :aaa lock.
+      assert {:ok, _lock} = Mutex.lock(@mut, :zzz)
+
+      assert_raise LockError, fn ->
+        Mutex.await_all(@mut, [:aaa, :zzz])
+      end
+
+      assert {:ok, %Lock{}} = Mutex.lock(@mut, :aaa)
+      assert {:error, %LockError{cause: {:locked, ^this}}} = Mutex.lock(@mut, :zzz)
+    end
+
+    test "await_all raises when the first sorted key is owned" do
+      # The self-lock is detected before any key is acquired, so the failure
+      # path releases an empty list of keys.
+      assert {:ok, _lock} = Mutex.lock(@mut, :aaa)
+
+      assert_raise LockError, fn ->
+        Mutex.await_all(@mut, [:aaa, :zzz])
+      end
+
+      assert {:ok, %Lock{}} = Mutex.lock(@mut, :zzz)
     end
   end
 

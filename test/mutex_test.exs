@@ -9,6 +9,7 @@ defmodule MutexTest do
   doctest Mutex
 
   @moduletag :capture_log
+  @moduletag timeout: 3000
   @mut rand_mod()
 
   setup do
@@ -25,22 +26,24 @@ defmodule MutexTest do
   end
 
   test "cannot acquire twice" do
+    this = self()
     assert {:ok, %Lock{}} = Mutex.lock(@mut, :some_key)
-    assert {:error, :busy} = Mutex.lock(@mut, :some_key)
+    assert {:error, %LockError{key: :some_key, cause: {:locked, ^this}}} = Mutex.lock(@mut, :some_key)
   end
 
   test "can't acquire locked key" do
     {ack, wack} = awack()
 
-    xspawn(fn ->
-      Mutex.lock!(@mut, :key1)
+    pid =
+      xspawn(fn ->
+        Mutex.lock!(@mut, :key1)
 
-      ack.()
-      hang()
-    end)
+        ack.()
+        hang()
+      end)
 
     wack.()
-    assert {:error, :busy} = Mutex.lock(@mut, :key1)
+    assert {:error, %LockError{key: :key1, cause: {:locked, ^pid}}} = Mutex.lock(@mut, :key1)
     err = catch_error(Mutex.lock!(@mut, :key1))
     assert %LockError{key: :key1} = err
     assert Exception.message(err) =~ "key1"
@@ -89,7 +92,7 @@ defmodule MutexTest do
     {ack_waiter, wack_waiter} = awack(:infinity)
 
     xspawn(fn ->
-      assert {:error, :busy} = Mutex.lock(@mut, :inf_key)
+      assert {:error, %LockError{key: :inf_key, cause: {:locked, ^locker_pid}}} = Mutex.lock(@mut, :inf_key)
       # infinity timeout is valid
       assert %Lock{} = Mutex.await(@mut, :inf_key, :infinity)
       ack_waiter.()
@@ -190,16 +193,17 @@ defmodule MutexTest do
   test "can't release a key if not owner" do
     {ack, wack} = vawack()
 
-    xspawn(fn ->
-      lock = Mutex.lock!(@mut, :not_mine)
-      ack.(lock)
-      hang()
-    end)
+    pid =
+      xspawn(fn ->
+        lock = Mutex.lock!(@mut, :not_mine)
+        ack.(lock)
+        hang()
+      end)
 
     lock = wack.()
 
     assert_raise ReleaseError, fn -> Mutex.release(@mut, lock) end
-    assert {:error, :busy} = Mutex.lock(@mut, :not_mine)
+    assert {:error, %LockError{key: :not_mine, cause: {:locked, ^pid}}} = Mutex.lock(@mut, :not_mine)
   end
 
   test "can't release a key if not owner (async)" do
@@ -238,7 +242,8 @@ defmodule MutexTest do
     assert_raise ReleaseError, fn -> Mutex.release(@mut, lock) end
 
     # Still owning k2
-    assert {:error, :busy} = Mutex.lock(@mut, :k2)
+    this = self()
+    assert {:error, %LockError{key: :k2, cause: {:locked, ^this}}} = Mutex.lock(@mut, :k2)
     assert self() == Mutex.whereis_name({@mut, :k2})
   end
 
@@ -318,7 +323,7 @@ defmodule MutexTest do
 
           # A synchronous call proves the stray message was handled, since
           # messages are processed in order. The key must still be locked.
-          assert {:error, :busy} = Mutex.lock(@mut, :stray_key)
+          assert {:error, %LockError{cause: {:locked, _}}} = Mutex.lock(@mut, :stray_key)
         end)
 
       # The server was not restarted: same pid, still alive.
@@ -340,6 +345,59 @@ defmodule MutexTest do
       :ok = Mutex.release(@mut, lock)
 
       assert %Lock{key: :stray_wait_key} = Task.await(task)
+    end
+  end
+
+  describe "self-lock detection" do
+    # Awaiting a key that the calling process already owns can never succeed,
+    # since only the owner itself can release a key. This must raise instead
+    # of deadlocking. The timeout guards against a regression to the deadlock
+    # behavior.
+
+    test "await on an owned key raises instead of deadlocking" do
+      assert {:ok, _lock} = Mutex.lock(@mut, :self_key)
+
+      err =
+        assert_raise LockError, fn ->
+          Mutex.await(@mut, :self_key, :infinity)
+        end
+
+      # The message must tell that the caller owns the key itself, not merely
+      # that the key is busy.
+      assert Exception.message(err) =~ ":self_key"
+      assert Exception.message(err) =~ "own"
+    end
+
+    test "await with a finite timeout raises instead of exiting" do
+      assert {:ok, _lock} = Mutex.lock(@mut, :self_key_tmo)
+
+      # The long await timeout proves that detection is immediate: on
+      # regression this test fails after 5 seconds, before the await gives up.
+      assert_raise LockError, fn ->
+        Mutex.await(@mut, :self_key_tmo, 60_000)
+      end
+    end
+
+    test "the key is still locked after the raise" do
+      this = self()
+      assert {:ok, _lock} = Mutex.lock(@mut, :self_kept_key)
+
+      assert_raise LockError, fn ->
+        Mutex.await(@mut, :self_kept_key, :infinity)
+      end
+
+      assert {:error, %LockError{key: :self_kept_key, cause: {:locked, ^this}}} = Mutex.lock(@mut, :self_kept_key)
+    end
+
+    test "with_lock on an owned key raises without running the fun" do
+      this = self()
+      assert {:ok, _lock} = Mutex.lock(@mut, :self_wl_key)
+
+      assert_raise LockError, fn ->
+        Mutex.with_lock(@mut, :self_wl_key, fn -> send(this, :fun_ran) end)
+      end
+
+      refute_received :fun_ran
     end
   end
 
