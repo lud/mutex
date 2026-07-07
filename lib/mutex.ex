@@ -111,11 +111,13 @@ defmodule Mutex do
 
   Returns the lock or fails with a timeout.
 
-  Due to the notification system, multiple attempts can be made to lock if
-  multiple processes are competing for the key.
+  When the key is released, all awaiting processes compete to lock it again,
+  and one of them, chosen in no particular order, acquires it. The other
+  processes keep waiting.
 
-  So timeout will be *at least* for the passed amount of milliseconds, but may
-  be slightly longer.
+  Because of those repeated attempts, the timeout is a minimum: the function
+  waits *at least* for the passed amount of milliseconds, but may take
+  slightly longer to give up.
 
   Default timeout is `5000` milliseconds. If the timeout is reached, the caller
   process exits as in `GenServer.call/3`.  More information in the
