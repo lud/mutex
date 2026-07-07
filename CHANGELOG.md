@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.0.0] - 2026-07-07
+
+### 🚀 Features
+
+- [**breaking**] Detect self-deadlocks in await functions and return LockError with owner pid from lock/2
+- [**breaking**] Mutex.release now returns an error tuple on failures, added Mutex.release!
+
+### 🐛 Bug Fixes
+
+- Raise ArgumentError on duplicate keys in await_all instead of hanging forever
+- Accept and log unexpected messsages in handle_info
+- Skip liveness check for remote pids in whereis_name
+
+### 🚜 Refactor
+
+- Use single monitor for each client process
+
+### 📚 Documentation
+
+- Document await_all concurrency model
+- Document ReleaseEror exception module
+
 ## [3.0.6] - 2026-07-04
 
 ### 📚 Documentation

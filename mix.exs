@@ -2,7 +2,7 @@ defmodule Mutex.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/lud/mutex"
-  @version "3.0.6"
+  @version "4.0.0"
 
   def project do
     [
@@ -66,15 +66,24 @@ defmodule Mutex.Mixfile do
     [
       annotate: true,
       before_commit: [
-        fn vsn ->
-          case System.cmd("git", ["cliff", "--tag", vsn, "-o", "CHANGELOG.md"], stderr_to_stdout: true) do
-            {_, 0} -> IO.puts("Updated CHANGELOG.md with #{vsn}")
-            {out, _} -> {:error, "Could not update CHANGELOG.md:\n\n #{out}"}
-          end
-        end,
-        add: "CHANGELOG.md"
+        &update_readme/1,
+        {:add, "README.md"},
+        &gen_changelog/1,
+        {:add, "CHANGELOG.md"}
       ]
     ]
+  end
+
+  defp update_readme(vsn) do
+    :ok = Readmix.update_file(Readmix.new(vars: %{app_vsn: vsn}), "README.md")
+    :ok
+  end
+
+  defp gen_changelog(vsn) do
+    case System.cmd("git", ["cliff", "--tag", vsn, "-o", "CHANGELOG.md"], stderr_to_stdout: true) do
+      {_, 0} -> IO.puts("Updated CHANGELOG.md with #{vsn}")
+      {out, _} -> {:error, "Could not update CHANGELOG.md:\n\n #{out}"}
+    end
   end
 
   defp dialyzer do
