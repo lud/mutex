@@ -302,4 +302,61 @@ defmodule MutexTest do
     assert log =~ generic
     assert log =~ formatted_key
   end
+
+  describe "receiving unexpected messages" do
+    # The server must ignore stray messages instead of crashing: a crash
+    # destroys all lock state, so owners would believe they still hold their
+    # locks while a restarted, empty server grants the keys to anyone.
+
+    test "a stray message does not crash the server nor lose the locks" do
+      server_pid = Process.whereis(@mut)
+      assert {:ok, %Lock{}} = Mutex.lock(@mut, :stray_key)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          send(@mut, :unexpected_garbage)
+
+          # A synchronous call proves the stray message was handled, since
+          # messages are processed in order. The key must still be locked.
+          assert {:error, :busy} = Mutex.lock(@mut, :stray_key)
+        end)
+
+      # The server was not restarted: same pid, still alive.
+      assert ^server_pid = Process.whereis(@mut)
+      assert Process.alive?(server_pid)
+
+      # The stray message is logged with its content.
+      assert log =~ ":unexpected_garbage"
+    end
+
+    test "waiters are still served after a stray message" do
+      assert {:ok, lock} = Mutex.lock(@mut, :stray_wait_key)
+
+      task = Task.async(fn -> Mutex.await(@mut, :stray_wait_key, 5_000) end)
+
+      wait_for_waiter(@mut, :stray_wait_key)
+
+      send(@mut, {:garbage, make_ref(), [self()]})
+      :ok = Mutex.release(@mut, lock)
+
+      assert %Lock{key: :stray_wait_key} = Task.await(task)
+    end
+  end
+
+  defp wait_for_waiter(mutex, key, attempts \\ 50)
+
+  defp wait_for_waiter(_mutex, key, 0) do
+    flunk("no waiter registered for key #{inspect(key)}")
+  end
+
+  defp wait_for_waiter(mutex, key, attempts) do
+    case :sys.get_state(mutex) do
+      %{waiters: %{^key => [_ | _]}} ->
+        :ok
+
+      _ ->
+        Process.sleep(10)
+        wait_for_waiter(mutex, key, attempts - 1)
+    end
+  end
 end

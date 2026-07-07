@@ -117,6 +117,11 @@ defmodule Mutex.Server do
     {:noreply, clear_owner(state, pid, :DOWN)}
   end
 
+  def handle_info(msg, state) do
+    Logger.error("Mutex #{inspect(self())} received unexepected message: #{inspect(msg)}")
+    {:noreply, state}
+  end
+
   # -- State ------------------------------------------------------------------
 
   defp set_lock(%S{locks: locks, owns: owns} = state, key, pid) do
