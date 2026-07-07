@@ -233,8 +233,14 @@ defmodule Mutex do
 
   @doc """
   Releases the given lock synchronously.
+
+  Returns `:ok` once the keys of the lock are unlocked, making them available
+  to other processes.
+
+  Returns `{:error, error}` with a `Mutex.ReleaseError` when a key of the
+  lock is not locked by the calling process in the mutex.
   """
-  @spec release(mutex :: name, lock :: Lock.t()) :: {:ok, ReleaseError.t()}
+  @spec release(mutex :: name, lock :: Lock.t()) :: :ok | {:error, ReleaseError.t()}
   def release(mutex, lock) do
     case call_release(mutex, lock) do
       :ok -> :ok
@@ -243,9 +249,15 @@ defmodule Mutex do
   end
 
   @doc """
-  Releases the given lock synchronously.
+  Releases the given lock synchronously, raising when the release fails.
+
+  Returns `:ok` once the keys of the lock are unlocked, making them available
+  to other processes.
+
+  Raises a `Mutex.ReleaseError` when a key of the lock is not locked by the
+  calling process in the mutex.
   """
-  @spec release(mutex :: name, lock :: Lock.t()) :: :ok
+  @spec release!(mutex :: name, lock :: Lock.t()) :: :ok
   def release!(mutex, lock) do
     case release(mutex, lock) do
       :ok -> :ok
@@ -351,10 +363,13 @@ defmodule Mutex do
   end
 
   @doc """
-  Sets the the process identified by `pid` as the new owner of the `lock`.
+  Sets the process identified by `pid` as the new owner of the `lock`.
 
-  If succesful, that new owner will be sent a `{:"MUTEX-TRANSFER", from_pid,
-  lock, gift_data} ` message. If it is not alive, the lock will be released.
+  If successful, that new owner will be sent a `{:"MUTEX-TRANSFER", from_pid,
+  lock, gift_data}` message. If it is not alive, the lock will be released.
+
+  Raises a `Mutex.ReleaseError` when the calling process does not own the
+  lock.
 
   This function only supports single key locks.
   """

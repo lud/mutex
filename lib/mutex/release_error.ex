@@ -1,5 +1,24 @@
 defmodule Mutex.ReleaseError do
-  @moduledoc false
+  @moduledoc """
+  Reports a lock that could not be released or given away.
+
+  This exception is returned by `Mutex.release/2` and raised by
+  `Mutex.release!/2` and `Mutex.give_away/4`.
+
+  The following fields are public:
+
+  * `:key_or_keys` - the key of a single lock, or the list of keys of a
+    multilock.
+  * `:lock_type` - `:single` or `:multi`.
+  * `:action` - the attempted operation, `:release` or `:give_away`.
+  * `:releaser` - the pid of the process that attempted the operation.
+  * `:cause` - the reason why the operation failed:
+    * `:bad_owner` - a key is locked by another process. The pid of that
+      process is then set in the `:owner` field.
+    * `:unknown_key` - a key is not locked in the mutex.
+  * `:owner` - the pid of the process owning a key of the lock when the cause
+    is `:bad_owner`, otherwise `nil`.
+  """
 
   @type t :: %__MODULE__{
           lock_type: :single | :multi,
@@ -12,6 +31,7 @@ defmodule Mutex.ReleaseError do
 
   defexception [:lock_type, :key_or_keys, :owner, :releaser, :action, :cause]
 
+  @doc false
   def of(reason, lock_type, key_or_keys, action, releaser) do
     base = %__MODULE__{
       lock_type: lock_type,
