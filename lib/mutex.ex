@@ -401,7 +401,8 @@ defmodule Mutex do
   def whereis_name({mutex, key}) do
     case GenServer.call(mutex, {:where, key}) do
       nil -> :undefined
-      pid -> if Process.alive?(pid), do: pid, else: :undefined
+      pid when node(pid) == node() -> if Process.alive?(pid), do: pid, else: :undefined
+      pid -> pid
     end
   end
 
