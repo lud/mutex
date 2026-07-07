@@ -11,7 +11,7 @@ defmodule Mutex.Server do
       # %{lock_key => owner_pid}
       locks: %{},
 
-      # %{owner_pid => [{owned_key, monitor_ref}]}
+      # %{owner_pid => {monitor_ref, [owned_key]}}
       owns: %{},
 
       # %{key => [gen_server.from()]}
@@ -133,29 +133,27 @@ defmodule Mutex.Server do
     # Logger.debug "LOCK #{inspect key}"
     new_locks = Map.put(locks, key, pid)
 
-    ref = Process.monitor(pid)
-    keyref = {key, ref}
-
-    new_owns = Map.update(owns, pid, [keyref], fn keyrefs -> [keyref | keyrefs] end)
+    new_owns =
+      case owns do
+        %{^pid => {mref, keys}} -> Map.put(owns, pid, {mref, [key | keys]})
+        _ -> Map.put(owns, pid, {Process.monitor(pid), [key]})
+      end
 
     %S{state | locks: new_locks, owns: new_owns}
   end
 
   defp rm_lock(%S{locks: locks, owns: owns} = state, key, pid) do
-    # TODO optimize for multilocks release
     new_locks = Map.delete(locks, key)
 
-    {new_owns, mref} =
+    new_owns =
       case owns do
-        %{^pid => [{^key, mref}]} ->
-          {Map.delete(owns, pid), mref}
+        %{^pid => {mref, [^key]}} ->
+          Process.demonitor(mref, [:flush])
+          Map.delete(owns, pid)
 
-        %{^pid => keyrefs} ->
-          {{_key, mref}, new_keyrefs} = List.keytake(keyrefs, key, 0)
-          {Map.put(owns, pid, new_keyrefs), mref}
+        %{^pid => {mref, keys}} ->
+          Map.put(owns, pid, {mref, List.delete(keys, key)})
       end
-
-    Process.demonitor(mref, [:flush])
 
     state.waiters
     |> Map.get(key, [])
@@ -167,24 +165,25 @@ defmodule Mutex.Server do
   end
 
   defp clear_owner(%S{locks: locks, owns: owns} = state, pid, type) do
-    {keys, refs} =
-      owns
-      |> Map.get(pid, [])
-      |> Enum.unzip()
+    case owns do
+      %{^pid => {mref, keys}} ->
+        if type !== :DOWN do
+          Process.demonitor(mref, [:flush])
+        end
 
-    new_locks = Map.drop(locks, keys)
+        new_locks = Map.drop(locks, keys)
 
-    if type !== :DOWN do
-      Enum.each(refs, &Process.demonitor(&1, [:flush]))
+        {notifiables, new_waiters} = Map.split(state.waiters, keys)
+
+        Enum.each(notifiables, fn {key, froms} -> notify_waiters(froms, key) end)
+
+        new_owns = Map.delete(owns, pid)
+
+        %S{state | locks: new_locks, owns: new_owns, waiters: new_waiters}
+
+      _ ->
+        state
     end
-
-    {notifiables, new_waiters} = Map.split(state.waiters, keys)
-
-    Enum.each(notifiables, fn {key, froms} -> notify_waiters(froms, key) end)
-
-    new_owns = Map.delete(owns, pid)
-
-    %S{state | locks: new_locks, owns: new_owns, waiters: new_waiters}
   end
 
   defp set_waiter(%S{waiters: waiters} = state, key, from) do

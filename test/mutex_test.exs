@@ -401,6 +401,34 @@ defmodule MutexTest do
     end
   end
 
+  describe "cleanup on owner death" do
+    test "releasing one key does not stop the cleanup of remaining keys" do
+      {ack, wack} = vawack()
+
+      pid =
+        xspawn(fn ->
+          assert {:ok, lock_a} = Mutex.lock(@mut, :partial_a)
+          assert {:ok, _lock_b} = Mutex.lock(@mut, :partial_b)
+          :ok = Mutex.release(@mut, lock_a)
+          ack.(:released)
+          hang()
+        end)
+
+      assert :released = wack.()
+
+      # The released key is available, the other one is still held.
+      assert {:ok, _} = Mutex.lock(@mut, :partial_a)
+
+      assert {:error, %LockError{key: :partial_b, cause: {:locked, ^pid}}} =
+               Mutex.lock(@mut, :partial_b)
+
+      kill(pid)
+
+      # The owner death releases its remaining key.
+      assert %Lock{} = Mutex.await(@mut, :partial_b)
+    end
+  end
+
   defp wait_for_waiter(mutex, key, attempts \\ 50)
 
   defp wait_for_waiter(_mutex, key, 0) do

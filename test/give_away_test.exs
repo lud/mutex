@@ -1,5 +1,6 @@
 defmodule Mutex.GiveAwayTest do
   alias Mutex.Lock
+  alias Mutex.LockError
   alias Mutex.ReleaseError
   import Mutex.Test.Utils
   use ExUnit.Case, async: true
@@ -126,6 +127,37 @@ defmodule Mutex.GiveAwayTest do
     # ownership of :k2 was given but we ketp :k1
     assert self() == Mutex.whereis_name({@mut, :k1})
     assert pid == Mutex.whereis_name({@mut, :k2})
+  end
+
+  test "giver death does not release a given away lock" do
+    {ack, wack} = vawack()
+
+    heir =
+      xspawn(fn ->
+        receive do
+          {:"MUTEX-TRANSFER", _, _lock, nil} -> hang()
+        end
+      end)
+
+    giver =
+      xspawn(fn ->
+        assert {:ok, lock} = Mutex.lock(@mut, :crashing_giver)
+        :ok = Mutex.give_away(@mut, lock, heir)
+        ack.(:given)
+        hang()
+      end)
+
+    assert :given = wack.()
+
+    kill(giver)
+    await_down(giver)
+
+    # Let the mutex handle the giver :DOWN message before asserting.
+    Process.sleep(50)
+
+    # The heir still owns the key after the giver death.
+    assert heir == Mutex.whereis_name({@mut, :crashing_giver})
+    assert {:error, %LockError{cause: {:locked, ^heir}}} = Mutex.lock(@mut, :crashing_giver)
   end
 
   test "gift loop" do
