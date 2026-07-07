@@ -65,16 +65,14 @@ defmodule MutexTest do
   test "a wait-for-lock should timeout" do
     {ack, wack} = awack()
 
-    pid =
-      xspawn(fn ->
-        Mutex.lock!(@mut, :key3)
-        ack.()
-        hang()
-      end)
+    xspawn(fn ->
+      Mutex.lock!(@mut, :key3)
+      ack.()
+      hang()
+    end)
 
     wack.()
     assert {:timeout, _} = catch_exit(Mutex.await(@mut, :key3, 500))
-    Process.exit(pid, :normal)
   end
 
   test "can wait for a killed process to be automatically released" do

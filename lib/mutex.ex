@@ -234,11 +234,11 @@ defmodule Mutex do
   @doc """
   Releases the given lock synchronously.
 
-  Returns `:ok` once the keys of the lock are unlocked, making them available
-  to other processes.
+  Returns `:ok` once the keys of the lock are unlocked, making them available to
+  other processes.
 
-  Returns `{:error, error}` with a `Mutex.ReleaseError` when a key of the
-  lock is not locked by the calling process in the mutex.
+  Returns `{:error, error}` with a `Mutex.ReleaseError` when a key of the lock
+  is not locked by the calling process in the mutex.
   """
   @spec release(mutex :: name, lock :: Lock.t()) :: :ok | {:error, ReleaseError.t()}
   def release(mutex, lock) do
@@ -251,8 +251,8 @@ defmodule Mutex do
   @doc """
   Releases the given lock synchronously, raising when the release fails.
 
-  Returns `:ok` once the keys of the lock are unlocked, making them available
-  to other processes.
+  Returns `:ok` once the keys of the lock are unlocked, making them available to
+  other processes.
 
   Raises a `Mutex.ReleaseError` when a key of the lock is not locked by the
   calling process in the mutex.

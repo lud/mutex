@@ -9,7 +9,6 @@ defmodule Mutex.Mixfile do
       app: :mutex,
       version: @version,
       elixir: "~> 1.15",
-      build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       docs: docs(),

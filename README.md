@@ -11,7 +11,7 @@
 <!-- rdmx /:badges -->
 
 `Mutex` is a lightweight mutex or "locks" implementation that fits under your
-supervision tree and allows processes to work on shared ressources one by one.
+supervision tree and allows processes to work on shared resources one by one.
 
 This can be a simple alternative to job queues or filesystem transactions and
 allows to limit resource usage on a server.
@@ -75,7 +75,7 @@ defmodule MyApp.Application do
 end
 ```
 
-Now from anywhere in the application code you can lock access to a a resource
+Now from anywhere in the application code you can lock access to a resource
 with the guarantee that no concurrent execution of that code can be executed.
 
 Of course, this requires that all code attempting to access that resource uses
@@ -188,8 +188,8 @@ in a different order:
     Mutex.release(MyApp.Mutex, lock2)
   end
 
-  spawn(fn -> handler_order(:user_1, :user_2) end) # Process 1
-  spawn(fn -> handler_order(:user_2, :user_1) end) # Process 2
+  spawn(fn -> handle_order(:user_1, :user_2) end) # Process 1
+  spawn(fn -> handle_order(:user_2, :user_1) end) # Process 2
 ```
 
 Process 1 will first lock `:user_1` and process 2 will lock `:user_2`, and then

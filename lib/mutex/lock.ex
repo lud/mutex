@@ -7,7 +7,7 @@ defmodule Mutex.Lock do
 
   @typedoc """
   The struct containing the key(s) locked during a lock operation. `:type`
-  specifies wether there is one or more keys.
+  specifies whether there is one or more keys.
   """
   @type t :: %__MODULE__{
           type: :single | :multi,
