@@ -114,6 +114,34 @@ defmodule Mutex.Test.Utils do
     end
   end
 
+  # Blocks until the given pid is registered in the mutex as a waiter for the
+  # given key. This lets tests order waiter registrations deterministically
+  # before triggering a release or a kill.
+  def wait_for_waiting_pid(mutex, key, pid, attempts \\ 50)
+
+  def wait_for_waiting_pid(_mutex, key, pid, 0) do
+    ExUnit.Assertions.flunk("process #{inspect(pid)} was not registered as a waiter for key #{inspect(key)}")
+  end
+
+  def wait_for_waiting_pid(mutex, key, pid, attempts) do
+    if waiter_registered?(mutex, key, pid) do
+      :ok
+    else
+      Process.sleep(10)
+      wait_for_waiting_pid(mutex, key, pid, attempts - 1)
+    end
+  end
+
+  # Reads the server internal state. Single place to update when the waiters
+  # representation changes.
+  defp waiter_registered?(mutex, key, pid) do
+    %{waiters: waiters} = :sys.get_state(mutex)
+
+    waiters
+    |> Map.get(key, [])
+    |> Enum.any?(fn {waiter_pid, _tag} -> waiter_pid == pid end)
+  end
+
   @doc """
   Ensures that the exception message can be generated
   """
