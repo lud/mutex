@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.1.0] - 2026-07-15
+
+### 🚀 Features
+
+- Grant released keys to waiters in FIFO order
+
+### 🧪 Testing
+
+- Added tests around waiters cleanup guarantees
+
 ## [4.0.0] - 2026-07-07
 
 ### 🚀 Features

@@ -44,7 +44,7 @@ This package can be installed by adding `:mutex` to your list of dependencies in
 ```elixir
 defp deps do
   [
-    {:mutex, "~> 4.0"},
+    {:mutex, "~> 4.1"},
   ]
 end
 ```
