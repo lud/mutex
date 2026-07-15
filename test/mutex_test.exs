@@ -450,10 +450,10 @@ defmodule MutexTest do
 
   defp wait_for_waiter(mutex, key, attempts) do
     case :sys.get_state(mutex) do
-      %{waiters: %{^key => [_ | _]}} ->
+      %{waiters: %{^key => {[_ | _], _}}} ->
         :ok
 
-      _ ->
+      %{waiters: waiters} when not is_map_key(waiters, key) ->
         Process.sleep(10)
         wait_for_waiter(mutex, key, attempts - 1)
     end

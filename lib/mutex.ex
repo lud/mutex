@@ -83,7 +83,7 @@ defmodule Mutex do
   """
   @spec lock(name :: name, key :: key) :: {:ok, Lock.t()} | {:error, LockError.t()}
   def lock(mutex, key) do
-    case GenServer.call(mutex, {:lock, key, self(), false}) do
+    case GenServer.call(mutex, {:lock, key, false}) do
       :ok -> {:ok, key_to_lock(key)}
       {:error, {:locked, _} = cause} -> {:error, %LockError{key: key, cause: cause}}
     end
@@ -133,38 +133,15 @@ defmodule Mutex do
     await(mutex, key, 0)
   end
 
-  def await(mutex, key, :infinity) do
-    case safe_await_infinity(mutex, key) do
-      # lock acquired
+  def await(mutex, key, timeout) do
+    case GenServer.call(mutex, {:lock, key, true}, timeout) do
       :ok -> key_to_lock(key)
       {:error, :self_deadlock} -> raise LockError, cause: :self_deadlock, key: key
     end
-  end
-
-  def await(mutex, key, timeout) do
-    now = System.monotonic_time(:millisecond)
-
-    case GenServer.call(mutex, {:lock, key, self(), true}, timeout) do
-      :ok ->
-        key_to_lock(key)
-
-      {:available, ^key} ->
-        expires_at = now + timeout
-        now2 = System.monotonic_time(:millisecond)
-        timeout = expires_at - now2
-        await(mutex, key, timeout)
-
-      {:error, :self_deadlock} ->
-        raise LockError, cause: :self_deadlock, key: key
-    end
-  end
-
-  defp safe_await_infinity(mutex, key) do
-    case GenServer.call(mutex, {:lock, key, self(), true}, :infinity) do
-      :ok -> :ok
-      {:available, ^key} -> safe_await_infinity(mutex, key)
-      {:error, :self_deadlock} = err -> err
-    end
+  catch
+    :exit, {:timeout, {GenServer, :call, [_, {:lock, ^key, true}, _]}} = reason ->
+      GenServer.cast(mutex, {:cancel, key, self()})
+      exit(reason)
   end
 
   @doc """
@@ -219,6 +196,13 @@ defmodule Mutex do
 
       {:error, :self_deadlock} ->
         await_all_failure(mutex, %LockError{key: key, cause: :self_deadlock}, locked_keys)
+    end
+  end
+
+  defp safe_await_infinity(mutex, key) do
+    case GenServer.call(mutex, {:lock, key, true}, :infinity) do
+      :ok -> :ok
+      {:error, :self_deadlock} = err -> err
     end
   end
 

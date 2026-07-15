@@ -307,6 +307,12 @@ GenServer.start_link(MyGenServer, [], name: {:via, Mutex, {MyApp.Mutex, :some_ke
 
 In this case the lock is automatically taken by the `GenServer` process.
 
+Name registration is best used with `lock/2` or `await/3` with an `:infinity`
+timeout. With a bounded timeout, a grant can cross the waiter's timeout in
+flight: for a short window the mutex still reports the timed-out process as the
+owner of the key, so messages sent through the `:via` tuple during that window
+would be delivered to a process that never knew it acquired the lock.
+
 **Important**, this mechanism is intended for use with mutexes handling a small
 amount of processes working together. Do not use name registration with a single
 mutex in you application or you could get bottlenecks. The

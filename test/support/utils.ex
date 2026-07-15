@@ -119,8 +119,13 @@ defmodule Mutex.Test.Utils do
   # before triggering a release or a kill.
   def wait_for_waiting_pid(mutex, key, pid, attempts \\ 50)
 
-  def wait_for_waiting_pid(_mutex, key, pid, 0) do
-    ExUnit.Assertions.flunk("process #{inspect(pid)} was not registered as a waiter for key #{inspect(key)}")
+  def wait_for_waiting_pid(mutex, key, pid, 0) do
+    %{waiters: waiters} = :sys.get_state(mutex)
+    registered = Map.get(waiters, key, nil)
+
+    ExUnit.Assertions.flunk(
+      "process #{inspect(pid)} was not registered as a waiter for key #{inspect(key)}, waiters: #{inspect(registered)}"
+    )
   end
 
   def wait_for_waiting_pid(mutex, key, pid, attempts) do
@@ -138,8 +143,9 @@ defmodule Mutex.Test.Utils do
     %{waiters: waiters} = :sys.get_state(mutex)
 
     waiters
-    |> Map.get(key, [])
-    |> Enum.any?(fn {waiter_pid, _tag} -> waiter_pid == pid end)
+    |> Map.get(key, :queue.new())
+    |> :queue.to_list()
+    |> Enum.any?(fn {waiter_pid, _wref} -> waiter_pid == pid end)
   end
 
   @doc """
